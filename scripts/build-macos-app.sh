@@ -17,6 +17,7 @@ BIN_DIR="$(swift build --package-path "$ROOT/macos" -c release --arch arm64 --sh
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ditto "$BIN_DIR/SourceTempo" "$APP/Contents/MacOS/SourceTempo"
+ditto "$ROOT/macos/Assets/SourceTempo.icns" "$APP/Contents/Resources/SourceTempo.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +32,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <string>co.namespace.SourceTempo</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>SourceTempo.icns</string>
   <key>CFBundleName</key>
   <string>SourceTempo</string>
   <key>CFBundlePackageType</key>
