@@ -191,17 +191,17 @@ public struct PortfolioMomentum: Equatable, Sendable {
             reports[workspace].map { (workspace, $0) }
         }
 
-        var repositoryOwners: [String: String] = [:]
+        var repositoryOwners: [String: Workspace] = [:]
         for (workspace, report) in contributors {
             for repository in report.scope.repositories {
-                if let owner = repositoryOwners[repository.path], owner != workspace.displayName {
+                if let owner = repositoryOwners[repository.path], owner != workspace {
                     return .failure(.overlappingRepository(
                         path: repository.path,
-                        first: owner,
-                        second: workspace.displayName
+                        first: owner.root.path,
+                        second: workspace.root.path
                     ))
                 }
-                repositoryOwners[repository.path] = workspace.displayName
+                repositoryOwners[repository.path] = workspace
             }
         }
 

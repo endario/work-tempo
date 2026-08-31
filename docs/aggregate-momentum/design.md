@@ -127,9 +127,6 @@ Core tests must prove:
 - The rate aligns every contributor to one common through-date; pre-creation zeros remain valid calendar-day inactivity.
 - Individual and aggregate snapshots share the same metric semantics.
 - Chart aggregation preserves code, test, and documentation additions and removals as six independent series.
-- Aggregate refresh is sequential, continues after one failure, and cancels the remaining queue.
 - Collector arguments and the Python-to-Swift contract retain 185 daily labels for the six-month chart window.
-- Cache checkpoints survive collector cancellation after churn and snapshot progress batches.
-- The partial current day stays out of headline math while rendering at elapsed-day width or position in both charts.
 
 Visual verification uses the real menu-bar popover at 430 points wide with aggregate, individual, refreshing, partial, and empty states. Ink extents are measured for the hero value, header row, metric columns, chart labels, and legends. Chart segments are checked at Retina pixels, and both charts remain visible in the initial view. The installed release app must publish the same daily rate in its menu-bar item and retain `LSUIElement=true`.

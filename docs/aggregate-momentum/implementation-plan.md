@@ -86,8 +86,6 @@
 - Modify: `macos/Tests/SourceTempoCoreTests/TestReportFactory.swift`
 
 **Interfaces:**
-- Produces: `PortfolioMomentum.build(workspaces:reports:) -> Result<DashboardData, PortfolioError>`.
-- Produces: `DashboardData` with current totals, shared `MomentumInput?`, `ChartTimeline?`, contributor count, total count, watermark, oldest generation date, and one warning.
 - Errors: `.overlappingRepository(path:first:second:)` and `.mixedTimezones([String])`.
 
 - [ ] Add failing tests for summed current totals, aligned 30-day values and chart history, one cohort, missing reports, overlap refusal, timezone refusal, code/test/docs partitions, current-open-day gating, and short-history behavior.
@@ -109,7 +107,6 @@
 
 **Interfaces:**
 - Produces: collector `--days 185`.
-- Produces: `RefreshTarget(workspace:generatedAt:dayCount:)` and `RefreshCoordinator.request(trigger:scope:targets:now:lowPower:) -> [RefreshPlan]`.
 - Publishes: `refreshProgress` as current index, total, and workspace name.
 
 - [ ] Add failing tests proving manual aggregate queues all, unattended aggregate chooses exactly one missing/short/oldest-stale target, individual scope chooses only its workspace, timeout depends on report completeness, low-power suppression, single-flight, and cancellation queue semantics.

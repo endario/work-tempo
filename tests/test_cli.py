@@ -825,7 +825,6 @@ class LocAnalysisScriptTest(unittest.TestCase):
             tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
-
         self.assertIn("Configured extra repos not found on disk: companion", html)
         self.assertIn("Declared submodules with no usable checkout: modules/core", html)
         self.assertIn(
@@ -918,6 +917,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
             tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
+            document["period"] = {
+                "kind": "day",
+                "labels": ["2026-08-02", "2026-08-03", "2026-08-04"],
+            }
+            tempo.write_html(out, document)
+            daily_html = out.read_text(encoding="utf-8")
 
         data_json = html.split("const DATA = ", 1)[1].split(";\n", 1)[0]
         data = json.loads(data_json)
@@ -927,6 +932,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertIn("chart.dataX(startIdx)", html)
         self.assertIn('fill="#e5eaf1"', html)
         self.assertIn("Remaining month not counted yet", html)
+        self.assertIn("Remaining day not counted yet", daily_html)
+        self.assertIn("day-to-date", daily_html)
 
     def test_loc_forecast_projects_three_months(self) -> None:
         tempo = load_script("tempo_forecast_test", "src/source_tempo/cli.py")

@@ -1586,14 +1586,14 @@ function pushChurnRect(els, i, x, y, width, height, color, opacity, title) {
     if (restWidth > 0) {
       els.push(
         `<rect x="${x + fillWidth}" y="${y}" width="${restWidth}" height="${height}" fill="#e5eaf1" opacity="0.82">` +
-        `<title>Remaining month not counted yet</title></rect>`
+        `<title>Remaining __CURRENT_PERIOD_NOUN__ not counted yet</title></rect>`
       );
     }
   }
   if (fillWidth > 0) {
     els.push(
       `<rect x="${x}" y="${y}" width="${fillWidth}" height="${height}" fill="${color}" opacity="${opacity}">` +
-      `<title>${title}${ratio < 1 ? " month-to-date" : ""}</title></rect>`
+      `<title>${title}${ratio < 1 ? " __CURRENT_PERIOD_NOUN__-to-date" : ""}</title></rect>`
     );
   }
 }
@@ -2198,6 +2198,7 @@ def _render_html(
         .replace("__DETAIL_TITLE__", f"{period_title} Detail")
         .replace("__PERIOD_HEADER__", period_header)
         .replace("__CHANGE_HEADER__", f"{period_title} Change")
+        .replace("__CURRENT_PERIOD_NOUN__", period.lower())
         .replace("__SUBTITLE__", escape(subtitle))
         .replace("__GENERATED_AT__", escape(generated_label))
         .replace("__COUNTING_NOTES__", notes)

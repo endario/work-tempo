@@ -77,7 +77,11 @@ final class PortfolioMomentumTests: XCTestCase {
         ])
         XCTAssertEqual(
             failure(overlap),
-            .overlappingRepository(path: shared, first: "first", second: "second")
+            .overlappingRepository(
+                path: shared,
+                first: first.root.path,
+                second: second.root.path
+            )
         )
 
         let mixed = PortfolioMomentum.build(workspaces: [first, second], reports: [
@@ -85,6 +89,26 @@ final class PortfolioMomentumTests: XCTestCase {
             second: try report(root: second.root.path, timezone: "UTC (+00:00)"),
         ])
         XCTAssertEqual(failure(mixed), .mixedTimezones(["+08 (+08:00)", "UTC (+00:00)"]))
+    }
+
+    func testRefusesRepositoryOverlapForSameBasenameWorkspaces() throws {
+        let first = try Workspace(root: URL(fileURLWithPath: "/tmp/work/api"))
+        let second = try Workspace(root: URL(fileURLWithPath: "/tmp/oss/api"))
+        let shared = "/tmp/shared-repository"
+
+        let result = PortfolioMomentum.build(workspaces: [first, second], reports: [
+            first: try report(root: first.root.path, repositories: [first.root.path, shared]),
+            second: try report(root: second.root.path, repositories: [second.root.path, shared]),
+        ])
+
+        XCTAssertEqual(
+            failure(result),
+            .overlappingRepository(
+                path: shared,
+                first: first.root.path,
+                second: second.root.path
+            )
+        )
     }
 
     func testShortHistoryKeepsMetricsAndRendersCommonChartInterval() throws {
