@@ -52,6 +52,25 @@ final class WorkspaceControllerTests: XCTestCase {
         XCTAssertEqual(state.selectedWorkspace, fixture.first)
     }
 
+    func testRemoveDeletesCachedReportBeforeWorkspaceCanBeReadded() async throws {
+        let fixture = try Fixture()
+        let reportURL = fixture.store.reportURL(for: fixture.first)
+        try makeReportData(loc: Array(repeating: 777, count: 61)).write(to: reportURL)
+        try fixture.store.save(WorkspaceState(
+            roots: [fixture.first.root.path],
+            selectedRoot: fixture.first.root.path
+        ))
+        let controller = WorkspaceController(store: fixture.store)
+        let loaded = try await controller.load()
+        XCTAssertEqual(loaded.selectedReport?.series.loc.last, 777)
+
+        _ = try await controller.remove(fixture.first)
+        let readded = try await controller.add(root: fixture.first.root)
+
+        XCTAssertNil(readded.selectedReport)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: reportURL.path))
+    }
+
     func testRefreshFailureKeepsPriorReport() async throws {
         let fixture = try Fixture()
         let existing = try ReportDocument.decode(data: makeReportData(loc: Array(repeating: 777, count: 61)))

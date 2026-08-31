@@ -171,7 +171,7 @@ scripts/build-macos-app.sh --install
 open /Applications/SourceTempo.app
 ```
 
-Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The app renders its last successful report immediately, refreshes only the selected workspace once per hour and after wake, and skips unattended collection in Low Power Mode. A cold first collection is visible and has no timeout because it may take several minutes; later refreshes use two workers and stop after two minutes.
+Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The app renders its last successful report immediately, refreshes only the selected workspace once per hour and after wake, and skips unattended collection in Low Power Mode. A cold first collection is visible and has no timeout because it may take several minutes; refreshes use two workers and stop after two minutes.
 
 App state and saved reports live under:
 

@@ -12,7 +12,6 @@ public struct TrendPoint: Identifiable, Equatable, Sendable {
     public let label: String
     public let code: Int
     public let test: Int
-    public let docs: Int
 }
 
 public struct MomentumSummary: Equatable, Sendable {
@@ -65,8 +64,7 @@ public struct MomentumSummary: Equatable, Sendable {
             TrendPoint(
                 label: report.period.labels[index],
                 code: report.series.locByKind.code[index],
-                test: report.series.locByKind.test[index],
-                docs: report.series.docLoc[index]
+                test: report.series.locByKind.test[index]
             )
         }
     }

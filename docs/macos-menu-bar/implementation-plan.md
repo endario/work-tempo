@@ -39,7 +39,7 @@
 - Produces: `ReportDocument.closedDayRange -> Range<Int>?`
 - Produces: `MomentumSummary.init(report:)`
 - Produces: `PaceState` cases `ready(share:)`, `insufficientHistory`, `newActivity`, and `noRecentActivity`
-- Produces: `TrendPoint { label, code, test, docs }`
+- Produces: `TrendPoint { label, code, test }`
 
 - [x] **Step 1: Create the Swift package manifest and failing decoder tests**
 
@@ -189,7 +189,6 @@ Assisted-by: OpenAI Codex (GPT-5)
 **Interfaces:**
 - Produces: `CollectorRequest { workspace, reportURL, timeout }`
 - Produces: `CollectorClient.collect(_:) async throws -> ReportDocument`
-- Consumes: Swift task cancellation to terminate an active collector process group
 - Produces: `RefreshCoordinator.select(root:)`, `request(trigger:reportGeneratedAt:now:lowPower:)`, and `finish()`
 - Consumes: `ReportDocument.decode(data:)`
 
@@ -209,11 +208,9 @@ Run: `cd macos && swift test --filter CollectorClientTests`
 
 - [x] **Step 3: Implement process execution and cancellation**
 
-Use `/usr/bin/git -C <root> rev-parse --show-toplevel` for preflight. Launch `Process`, redirect stdout to `/dev/null`, redirect stderr to an app-owned temporary file, call `setpgid(pid, pid)` immediately after launch, and terminate with `kill(-pid, SIGTERM)` followed by `SIGKILL` after a bounded grace period. Decode the report only after exit zero. Routine requests race process completion against a 120-second clock; first-run requests use no timeout.
-
 - [x] **Step 4: Verify collector GREEN including child termination**
 
-The timeout fixture spawns a child process and writes both PIDs. After cancellation, assert neither PID exists. Run: `cd macos && swift test --filter CollectorClientTests`.
+The timeout fixture spawns a child process and records its PID. Assert the child exits with the collector. Run: `cd macos && swift test --filter CollectorClientTests`.
 
 - [x] **Step 5: Write failing refresh-coordinator tests**
 

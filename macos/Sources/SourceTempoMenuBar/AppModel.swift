@@ -57,6 +57,7 @@ final class AppModel: ObservableObject {
     }
 
     func chooseWorkspace() {
+        NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
         panel.title = "Add Git Workspace"
         panel.prompt = "Add Workspace"

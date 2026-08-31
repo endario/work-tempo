@@ -89,7 +89,7 @@ scripts/
   build-macos-app.sh
 ```
 
-`SourceTempoCore` owns JSON decoding, momentum calculations, workspace persistence, executable discovery, process execution, and refresh coordination. Executable discovery and process execution are separate small types so a bundled public collector replaces resolution policy without rewriting the client. Clock and process-running protocols make scheduling, single-flight behavior, cancellation, timeout, wake refresh, and staleness testable without importing SwiftUI. `SourceTempoMenuBar` owns application lifecycle and presentation.
+`SourceTempoCore` owns JSON decoding, momentum calculations, workspace persistence, executable discovery, process execution, and refresh coordination. Executable discovery and process execution are separate small types so a bundled public collector replaces resolution policy without rewriting the client. Clock and process-running protocols make scheduling, single-flight behavior, timeout, wake refresh, and staleness testable without importing SwiftUI. `SourceTempoMenuBar` owns application lifecycle and presentation.
 
 `DebugPreview.swift` is compiled only in debug builds. It renders the same dashboard view in an ordinary window when `SOURCE_TEMPO_PREVIEW=1`, allowing deterministic screenshot and accessibility inspection without adding a window or Dock presence to the release app.
 
@@ -180,7 +180,7 @@ Core tests use XCTest with fixed schema-version-1 fixtures. They cover:
 - Report decoding and unsupported schemas.
 - Current/previous closed 30-day windows, net growth, neutral inactivity, new activity, young repositories, and uneven history.
 - Workspace round-trip persistence and duplicate-root prevention.
-- Collector argument construction, fixed-path-before-`PATH` discovery, path preflight, successful output, timeout, cancellation, process-group termination, and non-zero exit diagnostics.
+- Collector argument construction, fixed-path-before-`PATH` discovery, path preflight, successful output, timeout, process-group termination, and non-zero exit diagnostics.
 - Refresh scheduling, tick coalescing, one-at-a-time execution, selected-workspace behavior, wake refresh, and staleness.
 
 App-level verification includes:

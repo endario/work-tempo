@@ -129,6 +129,56 @@ final class CollectorClientTests: XCTestCase {
         XCTAssertNotEqual(kill(childPID, 0), 0, "Collector child process remained alive")
     }
 
+    func testCancellationTerminatesUntimedCollectorProcessGroup() async throws {
+        let fixture = try makeFixtureRepository()
+        let childPIDFile = fixture.base.appending(path: "child.pid")
+        let executable = try makeExecutable(
+            in: fixture.base,
+            body: """
+            sleep 30 &
+            child=$!
+            echo "$child" > "$CHILD_PID_FILE"
+            wait "$child"
+            """
+        )
+        let client = CollectorClient(
+            executable: executable,
+            environment: ["CHILD_PID_FILE": childPIDFile.path]
+        )
+        let workspace = try Workspace(root: fixture.root)
+        let task = Task {
+            try await client.collect(CollectorRequest(
+                workspace: workspace,
+                reportURL: fixture.base.appending(path: "report.json"),
+                timeout: nil
+            ))
+        }
+
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: childPIDFile.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: childPIDFile.path))
+        let childPID = try Int32(
+            String(contentsOf: childPIDFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )!
+
+        let started = ContinuousClock.now
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Expected collection to be cancelled")
+        } catch {
+            XCTAssertEqual(error as? CollectorError, .cancelled)
+        }
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+
+        for _ in 0..<40 where kill(childPID, 0) == 0 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotEqual(kill(childPID, 0), 0, "Collector child process remained alive")
+    }
+
     private func makeFixtureRepository() throws -> (base: URL, root: URL) {
         let base = try makeTemporaryDirectory()
         let root = base.appending(path: "repo")

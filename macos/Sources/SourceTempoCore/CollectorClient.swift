@@ -41,16 +41,10 @@ public enum CollectorError: Error, Equatable, LocalizedError, Sendable {
 
 public actor CollectorClient {
     private let executable: URL
-    private let gitExecutable: URL
     private let environment: [String: String]
 
-    public init(
-        executable: URL,
-        gitExecutable: URL = URL(fileURLWithPath: "/usr/bin/git"),
-        environment: [String: String] = [:]
-    ) {
+    public init(executable: URL, environment: [String: String] = [:]) {
         self.executable = executable
-        self.gitExecutable = gitExecutable
         self.environment = environment
     }
 
@@ -69,9 +63,7 @@ public actor CollectorClient {
         let diagnosticHandle = try FileHandle(forWritingTo: diagnosticURL)
         defer { try? diagnosticHandle.close() }
 
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = [
+        let arguments = [
             "--root", request.workspace.root.path,
             "--period", "day",
             "--days", "61",
@@ -79,21 +71,27 @@ public actor CollectorClient {
             "--no-html",
             "--json", request.reportURL.path,
         ]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = diagnosticHandle
-        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, override in override }
+        let processEnvironment = ProcessInfo.processInfo.environment
+            .merging(environment) { _, override in override }
 
-        let running = RunningProcess(process)
         do {
-            try process.run()
-            running.establishProcessGroup()
+            let running = try RunningProcess.spawn(
+                executable: executable,
+                arguments: arguments,
+                environment: processEnvironment,
+                diagnosticDescriptor: diagnosticHandle.fileDescriptor
+            )
+            if Task.isCancelled {
+                running.terminateGroup()
+                _ = await running.wait()
+                throw CancellationError()
+            }
             let status = try await waitForExit(running, timeout: request.timeout)
+            try Task.checkCancellation()
             guard status == 0 else {
                 throw CollectorError.collectorFailed(finalDiagnostic(at: diagnosticURL, status: status))
             }
         } catch is CancellationError {
-            running.terminateGroup()
-            _ = await running.wait()
             throw CollectorError.cancelled
         } catch let error as CollectorError {
             throw error
@@ -114,24 +112,7 @@ public actor CollectorClient {
               isDirectory.boolValue else {
             throw CollectorError.missingWorkspace(workspace.root.path)
         }
-
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = gitExecutable
-        process.arguments = ["-C", workspace.root.path, "rev-parse", "--show-toplevel"]
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            throw CollectorError.notRepositoryRoot(workspace.root.path)
-        }
-        guard process.terminationStatus == 0,
-              let root = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              (try? Workspace(root: URL(fileURLWithPath: root))) == workspace
-        else {
+        guard FileManager.default.fileExists(atPath: workspace.root.appending(path: ".git").path) else {
             throw CollectorError.notRepositoryRoot(workspace.root.path)
         }
     }
@@ -178,52 +159,122 @@ private enum ExitResult: Sendable {
 }
 
 private final class RunningProcess: @unchecked Sendable {
-    private let process: Process
+    private let pid: pid_t
     private let lock = NSLock()
     private var status: Int32?
     private var waiters: [CheckedContinuation<Int32, Never>] = []
-    private var ownsProcessGroup = false
+    private var terminationStarted = false
 
-    init(_ process: Process) {
-        self.process = process
-        process.terminationHandler = { [weak self] process in
-            self?.complete(process.terminationStatus)
+    private init(pid: pid_t) {
+        self.pid = pid
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            var waitStatus: Int32 = 0
+            var result: pid_t
+            repeat {
+                result = waitpid(pid, &waitStatus, 0)
+            } while result == -1 && errno == EINTR
+            self.complete(result == pid ? Self.exitStatus(from: waitStatus) : 127)
         }
     }
 
-    func establishProcessGroup() {
-        let pid = process.processIdentifier
-        guard pid > 0 else { return }
-        ownsProcessGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
+    static func spawn(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        diagnosticDescriptor: Int32
+    ) throws -> RunningProcess {
+        var attributes: posix_spawnattr_t?
+        var actions: posix_spawn_file_actions_t?
+        guard posix_spawnattr_init(&attributes) == 0 else {
+            throw POSIXError(.ENOMEM)
+        }
+        defer { posix_spawnattr_destroy(&attributes) }
+        guard posix_spawn_file_actions_init(&actions) == 0 else {
+            throw POSIXError(.ENOMEM)
+        }
+        defer {
+            posix_spawn_file_actions_destroy(&actions)
+        }
+
+        let flags = Int16(POSIX_SPAWN_SETPGROUP)
+        guard posix_spawnattr_setflags(&attributes, flags) == 0,
+              posix_spawnattr_setpgroup(&attributes, 0) == 0,
+              posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0) == 0,
+              posix_spawn_file_actions_adddup2(&actions, diagnosticDescriptor, STDERR_FILENO) == 0 else {
+            throw POSIXError(.EINVAL)
+        }
+
+        let argumentStrings = [executable.path] + arguments
+        let environmentStrings = environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        var argv = argumentStrings.map { value in
+            value.withCString { strdup($0) }
+        } + [nil]
+        var envp = environmentStrings.map { value in
+            value.withCString { strdup($0) }
+        } + [nil]
+        defer {
+            for case let pointer? in argv {
+                free(UnsafeMutableRawPointer(pointer))
+            }
+            for case let pointer? in envp {
+                free(UnsafeMutableRawPointer(pointer))
+            }
+        }
+
+        var pid: pid_t = 0
+        let result = argv.withUnsafeMutableBufferPointer { argvBuffer in
+            envp.withUnsafeMutableBufferPointer { envpBuffer in
+                posix_spawn(
+                    &pid,
+                    executable.path,
+                    &actions,
+                    &attributes,
+                    argvBuffer.baseAddress!,
+                    envpBuffer.baseAddress!
+                )
+            }
+        }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: result) ?? .EIO)
+        }
+        return RunningProcess(pid: pid)
     }
 
     func wait() async -> Int32 {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if let status {
-                lock.unlock()
-                continuation.resume(returning: status)
-            } else {
-                waiters.append(continuation)
-                lock.unlock()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if let status {
+                    lock.unlock()
+                    continuation.resume(returning: status)
+                } else {
+                    waiters.append(continuation)
+                    lock.unlock()
+                }
             }
+        } onCancel: {
+            self.terminateGroup()
         }
     }
 
     func terminateGroup() {
-        guard process.isRunning else { return }
-        let pid = process.processIdentifier
-        if ownsProcessGroup {
-            kill(-pid, SIGTERM)
-        } else {
-            process.terminate()
+        lock.lock()
+        guard status == nil, !terminationStarted else {
+            lock.unlock()
+            return
         }
-        usleep(100_000)
-        if process.isRunning {
-            if ownsProcessGroup {
-                kill(-pid, SIGKILL)
-            } else {
-                kill(pid, SIGKILL)
+        terminationStarted = true
+        lock.unlock()
+
+        kill(-pid, SIGTERM)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let isRunning = self.status == nil
+            self.lock.unlock()
+            if isRunning {
+                kill(-self.pid, SIGKILL)
             }
         }
     }
@@ -241,5 +292,10 @@ private final class RunningProcess: @unchecked Sendable {
         for waiter in waiters {
             waiter.resume(returning: status)
         }
+    }
+
+    private static func exitStatus(from waitStatus: Int32) -> Int32 {
+        let signal = waitStatus & 0x7F
+        return signal == 0 ? (waitStatus >> 8) & 0xFF : 128 + signal
     }
 }

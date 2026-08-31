@@ -72,7 +72,7 @@ struct TrendChart: View {
             }
         }
         .frame(height: 150)
-        .accessibilityLabel("Sixty-day source line trend")
+        .accessibilityLabel("Source line trend")
     }
 
     private var tickIndices: [Int] {

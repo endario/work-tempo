@@ -100,7 +100,12 @@ public actor WorkspaceController {
         guard let index = workspaces.firstIndex(of: workspace) else {
             throw WorkspaceControllerError.unknownWorkspace(workspace.root.path)
         }
+        let reportURL = store.reportURL(for: workspace)
+        if FileManager.default.fileExists(atPath: reportURL.path) {
+            try FileManager.default.removeItem(at: reportURL)
+        }
         workspaces.remove(at: index)
+        reports[workspace.root.path] = nil
         refreshTickets[workspace.root.path] = nil
         refreshStates[workspace.root.path] = nil
         if selectedWorkspace == workspace {
