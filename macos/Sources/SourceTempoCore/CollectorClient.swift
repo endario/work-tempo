@@ -81,11 +81,6 @@ public actor CollectorClient {
                 environment: processEnvironment,
                 diagnosticDescriptor: diagnosticHandle.fileDescriptor
             )
-            if Task.isCancelled {
-                running.terminateGroup()
-                _ = await running.wait()
-                throw CancellationError()
-            }
             let status = try await waitForExit(running, timeout: request.timeout)
             try Task.checkCancellation()
             guard status == 0 else {
@@ -197,7 +192,7 @@ private final class RunningProcess: @unchecked Sendable {
             posix_spawn_file_actions_destroy(&actions)
         }
 
-        let flags = Int16(POSIX_SPAWN_SETPGROUP)
+        let flags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
         guard posix_spawnattr_setflags(&attributes, flags) == 0,
               posix_spawnattr_setpgroup(&attributes, 0) == 0,
               posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0) == 0,

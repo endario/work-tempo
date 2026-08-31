@@ -102,7 +102,7 @@ public actor WorkspaceController {
         }
         let reportURL = store.reportURL(for: workspace)
         if FileManager.default.fileExists(atPath: reportURL.path) {
-            try FileManager.default.removeItem(at: reportURL)
+            try? FileManager.default.removeItem(at: reportURL)
         }
         workspaces.remove(at: index)
         reports[workspace.root.path] = nil

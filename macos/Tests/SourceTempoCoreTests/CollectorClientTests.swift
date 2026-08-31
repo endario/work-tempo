@@ -96,6 +96,41 @@ final class CollectorClientTests: XCTestCase {
         }
     }
 
+    func testCollectorDoesNotInheritUnrelatedOpenDescriptors() async throws {
+        let fixture = try makeFixtureRepository()
+        let reportFixture = fixture.base.appending(path: "fixture.json")
+        try makeReportData().write(to: reportFixture)
+        let marker = fixture.base.appending(path: "parent-marker")
+        FileManager.default.createFile(atPath: marker.path, contents: nil)
+        let markerHandle = try FileHandle(forWritingTo: marker)
+        defer { try? markerHandle.close() }
+        let executable = try makeExecutable(
+            in: fixture.base,
+            body: """
+            if [ -e "/dev/fd/$PARENT_FD" ]; then
+              echo 'inherited parent descriptor' >&2
+              exit 9
+            fi
+            last=""
+            for argument in "$@"; do last="$argument"; done
+            cp "$REPORT_FIXTURE" "$last"
+            """
+        )
+        let client = CollectorClient(
+            executable: executable,
+            environment: [
+                "PARENT_FD": String(markerHandle.fileDescriptor),
+                "REPORT_FIXTURE": reportFixture.path,
+            ]
+        )
+
+        _ = try await client.collect(CollectorRequest(
+            workspace: try Workspace(root: fixture.root),
+            reportURL: fixture.base.appending(path: "report.json"),
+            timeout: .seconds(5)
+        ))
+    }
+
     func testTimeoutTerminatesCollectorProcessGroup() async throws {
         let fixture = try makeFixtureRepository()
         let childPIDFile = fixture.base.appending(path: "child.pid")
@@ -130,6 +165,14 @@ final class CollectorClientTests: XCTestCase {
     }
 
     func testCancellationTerminatesUntimedCollectorProcessGroup() async throws {
+        try await assertCancellationTerminatesProcess(timeout: nil)
+    }
+
+    func testCancellationTerminatesTimedCollectorProcessGroup() async throws {
+        try await assertCancellationTerminatesProcess(timeout: .seconds(20))
+    }
+
+    private func assertCancellationTerminatesProcess(timeout: Duration?) async throws {
         let fixture = try makeFixtureRepository()
         let childPIDFile = fixture.base.appending(path: "child.pid")
         let executable = try makeExecutable(
@@ -150,7 +193,7 @@ final class CollectorClientTests: XCTestCase {
             try await client.collect(CollectorRequest(
                 workspace: workspace,
                 reportURL: fixture.base.appending(path: "report.json"),
-                timeout: nil
+                timeout: timeout
             ))
         }
 

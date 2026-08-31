@@ -3,7 +3,7 @@ import XCTest
 @testable import SourceTempoCore
 
 final class CollectorContractTests: XCTestCase {
-    func testPythonCollectorOutputDecodesAsSwiftReport() throws {
+    func testPythonCollectorOutputDecodesAsSwiftReport() async throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -23,23 +23,19 @@ final class CollectorContractTests: XCTestCase {
             "commit", "--quiet", "-m", "fixture",
         ])
 
+        let executable = fixture.appending(path: "source-tempo")
+        try Data("#!/bin/sh\nexec /usr/bin/env python3 -m source_tempo \"$@\"\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        let workspace = try Workspace(root: fixture)
         let output = fixture.appending(path: "report.json")
-        try run(
-            "/usr/bin/env",
-            [
-                "python3", "-m", "source_tempo",
-                "--root", fixture.path,
-                "--period", "day",
-                "--days", "61",
-                "--workers", "2",
-                "--no-cache",
-                "--no-html",
-                "--json", output.path,
-            ],
-            environment: ["PYTHONPATH": repositoryRoot.appending(path: "src").path]
-        )
+        let report = try await CollectorClient(
+            executable: executable,
+            environment: [
+                "HOME": fixture.path,
+                "PYTHONPATH": repositoryRoot.appending(path: "src").path,
+            ]
+        ).collect(CollectorRequest(workspace: workspace, reportURL: output, timeout: .seconds(30)))
 
-        let report = try ReportDocument.decode(data: Data(contentsOf: output))
         XCTAssertEqual(report.schemaVersion, 1)
         XCTAssertEqual(
             NSString(string: report.workspace.root).resolvingSymlinksInPath,
@@ -52,14 +48,11 @@ final class CollectorContractTests: XCTestCase {
 
     private func run(
         _ executable: String,
-        _ arguments: [String],
-        environment: [String: String] = [:]
+        _ arguments: [String]
     ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
-        process.environment = ProcessInfo.processInfo.environment
-            .merging(environment) { _, override in override }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
