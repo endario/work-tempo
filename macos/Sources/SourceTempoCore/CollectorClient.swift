@@ -130,7 +130,7 @@ public actor CollectorClient {
         guard process.terminationStatus == 0,
               let root = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              URL(fileURLWithPath: root).standardizedFileURL.resolvingSymlinksInPath() == workspace.root
+              (try? Workspace(root: URL(fileURLWithPath: root))) == workspace
         else {
             throw CollectorError.notRepositoryRoot(workspace.root.path)
         }

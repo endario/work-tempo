@@ -10,9 +10,9 @@ struct SourceTempoApp: App {
         MenuBarExtra {
             DashboardView(
                 model: model,
-                onRefresh: {},
-                onAdd: {},
-                onRemove: {},
+                onRefresh: { model.toggleRefresh() },
+                onAdd: { model.chooseWorkspace() },
+                onRemove: { model.removeSelectedWorkspace() },
                 onQuit: { NSApplication.shared.terminate(nil) }
             )
         } label: {

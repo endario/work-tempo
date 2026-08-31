@@ -13,7 +13,8 @@ public struct Workspace: Equatable, Hashable, Sendable {
 
     public init(root: URL) throws {
         guard root.isFileURL else { throw WorkspaceError.invalidFileURL }
-        self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        let path = root.standardizedFileURL.resolvingSymlinksInPath().path
+        self.root = URL(fileURLWithPath: path, isDirectory: false)
     }
 }
 

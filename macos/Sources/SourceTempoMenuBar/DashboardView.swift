@@ -50,8 +50,12 @@ struct DashboardView: View {
                 }
             }
             Spacer()
-            actionButton("arrow.clockwise", help: "Refresh", action: onRefresh)
-                .disabled(model.selectedWorkspace == nil || model.snapshot.isRefreshing)
+            actionButton(
+                model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
+                help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
+                action: onRefresh
+            )
+                .disabled(model.selectedWorkspace == nil)
             actionButton("plus", help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
