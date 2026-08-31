@@ -101,11 +101,11 @@
 **Files:**
 - No product files beyond verified fixes.
 
-**Produces:** Private `endario/source-tempo` repository with reviewed initial commit on `main`.
+**Produces:** Private `endario-org/source-tempo` repository with reviewed initial commit on `main`.
 
 - [ ] Run unit tests, module compilation, CLI help, and a representative report against the SourceTempo repository itself.
 - [ ] Inspect generated HTML in a browser and verify title, charts, and artifact path.
 - [ ] Commit with accurate Codex assistance attribution.
-- [ ] Create the private GitHub repository using the `endario` account token without changing the global GitHub CLI account.
+- [ ] Create the private GitHub repository in `endario-org` using the `endario` account token without changing the global GitHub CLI account.
 - [ ] Push a feature branch, open a PR, run independent review, and address verified findings.
 - [ ] Merge the PR and verify the local `main` branch matches the remote default branch.
