@@ -8,6 +8,9 @@ final class DebugPreviewDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard ProcessInfo.processInfo.environment["SOURCE_TEMPO_PREVIEW"] == "1" else { return }
+        if ProcessInfo.processInfo.environment["SOURCE_TEMPO_DARK_PREVIEW"] == "1" {
+            NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        }
 
         let model = AppModel()
         let view = DashboardView(
@@ -19,9 +22,9 @@ final class DebugPreviewDelegate: NSObject, NSApplicationDelegate {
         )
         let controller = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: controller)
-        window.title = "SourceTempo Preview"
+        window.title = "Source Tempo Preview"
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 430, height: 700))
+        window.setContentSize(NSSize(width: 430, height: 565))
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)

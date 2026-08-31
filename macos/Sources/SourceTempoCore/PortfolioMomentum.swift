@@ -1,5 +1,11 @@
 import Foundation
 
+public enum HistoryWindow {
+    // Six consecutive calendar months can span 184 days (March through August).
+    public static let chartClosedDays = 184
+    public static let collectorDays = chartClosedDays + 1
+}
+
 public enum PortfolioError: Error, Equatable, LocalizedError, Sendable {
     case overlappingRepository(path: String, first: String, second: String)
     case mixedTimezones([String])
@@ -31,22 +37,139 @@ public struct AlignedMomentum: Equatable, Sendable {
     public let summary: MomentumSummary
 }
 
-public struct LanguageTimeline: Equatable, Sendable {
-    public let language: String
-    public let values: [Int]
-}
-
 public struct ChartTimeline: Equatable, Sendable {
     public let labels: [String]
     public let closedDayCount: Int
     public let currentProgress: Double?
-    public let languages: [LanguageTimeline]
+    public let codeLoc: [Int]
+    public let testLoc: [Int]
     public let docLoc: [Int]
     public let codeAdded: [Int]
     public let testAdded: [Int]
     public let codeDeleted: [Int]
     public let testDeleted: [Int]
-    public let docChurn: [Int]
+    public let docAdded: [Int]
+    public let docDeleted: [Int]
+}
+
+public struct MonthlyChurnPoint: Equatable, Sendable {
+    public let label: String
+    public let codeAdded: Int
+    public let testAdded: Int
+    public let codeDeleted: Int
+    public let testDeleted: Int
+    public let docAdded: Int
+    public let docDeleted: Int
+    public let currentProgress: Double?
+}
+
+public struct CumulativeChangePoint: Equatable, Sendable {
+    public let index: Int
+    public let codeAdded: Int
+    public let testAdded: Int
+    public let docAdded: Int
+    public let codeDeleted: Int
+    public let testDeleted: Int
+    public let docDeleted: Int
+}
+
+public extension ChartTimeline {
+    var monthlyChurn: [MonthlyChurnPoint] {
+        var accumulators: [MonthAccumulator] = []
+        for index in labels.indices {
+            let month = String(labels[index].prefix(7))
+            if accumulators.last?.label != month {
+                accumulators.append(MonthAccumulator(label: month))
+            }
+            let last = accumulators.count - 1
+            accumulators[last].codeAdded += codeAdded[index]
+            accumulators[last].testAdded += testAdded[index]
+            accumulators[last].codeDeleted += codeDeleted[index]
+            accumulators[last].testDeleted += testDeleted[index]
+            accumulators[last].docAdded += docAdded[index]
+            accumulators[last].docDeleted += docDeleted[index]
+        }
+
+        var result = Array(accumulators.suffix(6)).map { item in
+            MonthlyChurnPoint(
+                label: item.label,
+                codeAdded: item.codeAdded,
+                testAdded: item.testAdded,
+                codeDeleted: item.codeDeleted,
+                testDeleted: item.testDeleted,
+                docAdded: item.docAdded,
+                docDeleted: item.docDeleted,
+                currentProgress: nil
+            )
+        }
+        guard currentProgress != nil,
+              let label = labels.last,
+              let progress = currentMonthProgress(label: label),
+              !result.isEmpty else { return result }
+        let current = result.removeLast()
+        result.append(MonthlyChurnPoint(
+            label: current.label,
+            codeAdded: current.codeAdded,
+            testAdded: current.testAdded,
+            codeDeleted: current.codeDeleted,
+            testDeleted: current.testDeleted,
+            docAdded: current.docAdded,
+            docDeleted: current.docDeleted,
+            currentProgress: progress
+        ))
+        return result
+    }
+
+    var cumulativeChanges: [CumulativeChangePoint] {
+        var codeAddedTotal = 0
+        var testAddedTotal = 0
+        var docAddedTotal = 0
+        var codeDeletedTotal = 0
+        var testDeletedTotal = 0
+        var docDeletedTotal = 0
+        return labels.indices.map { index in
+            codeAddedTotal += codeAdded[index]
+            testAddedTotal += testAdded[index]
+            docAddedTotal += docAdded[index]
+            codeDeletedTotal += codeDeleted[index]
+            testDeletedTotal += testDeleted[index]
+            docDeletedTotal += docDeleted[index]
+            return CumulativeChangePoint(
+                index: index,
+                codeAdded: codeAddedTotal,
+                testAdded: testAddedTotal,
+                docAdded: docAddedTotal,
+                codeDeleted: codeDeletedTotal,
+                testDeleted: testDeletedTotal,
+                docDeleted: docDeletedTotal
+            )
+        }
+    }
+
+    private func currentMonthProgress(label: String) -> Double? {
+        let parts = label.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, let currentProgress else { return nil }
+        let days = daysInMonth(year: parts[0], month: parts[1])
+        return min(1, (Double(parts[2] - 1) + currentProgress) / Double(days))
+    }
+}
+
+private struct MonthAccumulator {
+    let label: String
+    var codeAdded = 0
+    var testAdded = 0
+    var codeDeleted = 0
+    var testDeleted = 0
+    var docAdded = 0
+    var docDeleted = 0
+}
+
+private func daysInMonth(year: Int, month: Int) -> Int {
+    switch month {
+    case 4, 6, 9, 11: 30
+    case 2: (year.isMultiple(of: 400) || (year.isMultiple(of: 4) && !year.isMultiple(of: 100))) ? 29 : 28
+    default: 31
+    }
 }
 
 public struct PortfolioMomentum: Equatable, Sendable {
@@ -107,7 +230,7 @@ public struct PortfolioMomentum: Equatable, Sendable {
                 warning: warning,
                 momentum: nil,
                 chart: nil,
-                historyState: .extending(current: 0, required: 90)
+                historyState: .extending(current: 0, required: HistoryWindow.chartClosedDays)
             ))
         }
 
@@ -117,8 +240,11 @@ public struct PortfolioMomentum: Equatable, Sendable {
         let aligned = momentumLabels.count >= 30
             ? AlignedMomentum(input: momentumInput, summary: MomentumSummary(input: momentumInput))
             : nil
-        let chart = commonClosed.count >= 90
-            ? makeChart(reports: contributors.map(\.1), closedLabels: Array(commonClosed.suffix(90)))
+        let chart = commonClosed.count >= 2
+            ? makeChart(
+                reports: contributors.map(\.1),
+                closedLabels: Array(commonClosed.suffix(min(HistoryWindow.chartClosedDays, commonClosed.count)))
+            )
             : nil
 
         return .success(PortfolioMomentum(
@@ -130,16 +256,19 @@ public struct PortfolioMomentum: Equatable, Sendable {
             warning: warning,
             momentum: aligned,
             chart: chart,
-            historyState: chart == nil
-                ? .extending(current: commonClosed.count, required: 90)
-                : .ready
+            historyState: commonClosed.count >= HistoryWindow.chartClosedDays
+                ? .ready
+                : .extending(current: commonClosed.count, required: HistoryWindow.chartClosedDays)
         ))
     }
 
     public static func chart(for report: ReportDocument) -> ChartTimeline? {
         let closed = closedLabels(report)
-        guard closed.count >= 90 else { return nil }
-        return makeChart(reports: [report], closedLabels: Array(closed.suffix(90)))
+        guard closed.count >= 2 else { return nil }
+        return makeChart(
+            reports: [report],
+            closedLabels: Array(closed.suffix(min(HistoryWindow.chartClosedDays, closed.count)))
+        )
     }
 
     private static func commonClosedLabels(_ reports: [ReportDocument]) -> [String] {
@@ -187,30 +316,23 @@ public struct PortfolioMomentum: Equatable, Sendable {
             labels.append(openLabel)
         }
 
-        let languageNames = Set(reports.flatMap { $0.series.language.map(\.language) })
-        let languages = languageNames.map { language in
-            LanguageTimeline(
-                language: language,
-                values: sum(reports, labels: labels) { report in
-                    report.series.language.first(where: { $0.language == language })?.values
-                        ?? Array(repeating: 0, count: report.period.labels.count)
-                }
-            )
-        }.sorted {
-            ($0.values.last ?? 0, $0.language) > ($1.values.last ?? 0, $1.language)
-        }
-
         return ChartTimeline(
             labels: labels,
             closedDayCount: closedLabels.count,
             currentProgress: hasSharedOpenDay ? reports.map { $0.timeline.currentProgress }.min() : nil,
-            languages: languages,
+            codeLoc: sum(reports, labels: labels) { $0.series.locByKind.code },
+            testLoc: sum(reports, labels: labels) { $0.series.locByKind.test },
             docLoc: sum(reports, labels: labels) { $0.series.docLoc },
             codeAdded: sum(reports, labels: labels) { $0.series.addedByKind.code },
             testAdded: sum(reports, labels: labels) { $0.series.addedByKind.test },
             codeDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.code },
             testDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.test },
-            docChurn: sum(reports, labels: labels) { $0.series.docChurn }
+            docAdded: sum(reports, labels: labels) {
+                $0.series.docAdded ?? Array(repeating: 0, count: $0.period.labels.count)
+            },
+            docDeleted: sum(reports, labels: labels) {
+                $0.series.docDeleted ?? Array(repeating: 0, count: $0.period.labels.count)
+            }
         )
     }
 

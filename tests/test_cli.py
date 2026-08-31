@@ -69,6 +69,8 @@ def make_report_document(
             doc_loc_series=doc_loc_series,
             churn_series=churn_series,
             doc_churn_series=doc_churn_series,
+            doc_added_series=doc_churn_series,
+            doc_deleted_series=[0] * len(doc_churn_series),
             added_series=added_series,
             deleted_series=deleted_series,
             loc_kind_series=loc_kind_series,
@@ -476,6 +478,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
             doc_loc_series=[5],
             churn_series=[12],
             doc_churn_series=[2],
+            doc_added_series=[1],
+            doc_deleted_series=[1],
             added_series=[8],
             deleted_series=[4],
             loc_kind_series={"code": [20], "test": [10]},
@@ -503,6 +507,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual(document["workspace"]["title"], "Fixture LOC")
         self.assertEqual(document["period"], {"kind": "month", "labels": ["2026-08"]})
         self.assertEqual(document["series"]["loc"], [30])
+        self.assertEqual(document["series"]["docAdded"], [1])
+        self.assertEqual(document["series"]["docDeleted"], [1])
         self.assertEqual(document["latest"]["repositories"][0]["commit"], "abc123")
         self.assertEqual(document["latest"]["repositories"][0]["label"], 'repo <& "')
         self.assertEqual(document["series"]["language"][0]["language"], "Python <&")
@@ -861,6 +867,18 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
         self.assertEqual(timeline["currentIndex"], 2)
         self.assertAlmostEqual(timeline["currentProgress"], 4 / 31)
+
+    def test_daily_chart_timeline_interpolates_current_open_day(self) -> None:
+        tempo = load_script("tempo_daily_timeline_test", "src/source_tempo/cli.py")
+        timeline = tempo.chart_timeline_metadata(
+            ["2026-08-30", "2026-08-31"],
+            "day",
+            timezone.utc,
+            datetime(2026, 8, 31, 6, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(timeline["currentIndex"], 1)
+        self.assertAlmostEqual(timeline["currentProgress"], 0.25)
 
     def test_chart_timeline_leaves_closed_months_at_full_tick(self) -> None:
         tempo = load_script("tempo_closed_timeline_test", "src/source_tempo/cli.py")
@@ -1356,6 +1374,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertEqual(cold["series"]["locByKind"], {"code": [2, 3], "test": [2, 2]})
             self.assertEqual(cold["series"]["churn"], [4, 1])
             self.assertEqual(cold["series"]["docChurn"], [1, 1])
+            self.assertEqual(cold["series"]["docAdded"], [1, 1])
+            self.assertEqual(cold["series"]["docDeleted"], [0, 0])
             self.assertEqual(cold["series"]["added"], [4, 1])
             self.assertEqual(
                 [item["label"] for item in cold["latest"]["repositories"]],

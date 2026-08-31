@@ -9,7 +9,9 @@ struct MenuBarLabel: View {
             Image(systemName: snapshot.isRefreshing ? "arrow.trianglehead.2.clockwise.rotate.90" : "metronome")
             Text(snapshot.menuValue)
                 .monospacedDigit()
-            if snapshot.dataState == .stale || snapshot.dataState == .failedWithCache {
+            if snapshot.dataState == .stale
+                || snapshot.dataState == .failedWithCache
+                || snapshot.dataState == .failedEmpty {
                 Image(systemName: "exclamationmark.circle.fill")
                     .imageScale(.small)
             }

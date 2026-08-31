@@ -14,11 +14,11 @@ public struct Workspace: Equatable, Hashable, Sendable {
     public init(root: URL) throws {
         guard root.isFileURL else { throw WorkspaceError.invalidFileURL }
         let path = root.standardizedFileURL.resolvingSymlinksInPath().path
-        self.root = URL(fileURLWithPath: path, isDirectory: false)
+        self.root = URL(fileURLWithPath: path, isDirectory: true)
     }
 }
 
-public enum DisplayScope: Equatable, Sendable {
+public enum DisplayScope: Equatable, Hashable, Sendable {
     case all
     case workspace(Workspace)
 }

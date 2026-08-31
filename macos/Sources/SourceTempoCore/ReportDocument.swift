@@ -78,8 +78,12 @@ public struct ReportDocument: Decodable, Sendable {
             ("deletedByKind.code", series.deletedByKind.code.count),
             ("deletedByKind.test", series.deletedByKind.test.count),
         ]
+        let optionalAligned = [
+            series.docAdded.map { ("docAdded", $0.count) },
+            series.docDeleted.map { ("docDeleted", $0.count) },
+        ].compactMap { $0 }
         let languageAligned = series.language.map { ("language.\($0.language)", $0.values.count) }
-        if let mismatch = (aligned + languageAligned).first(where: { $0.1 != count }) {
+        if let mismatch = (aligned + optionalAligned + languageAligned).first(where: { $0.1 != count }) {
             throw ReportError.misalignedSeries(mismatch.0)
         }
     }
@@ -112,6 +116,8 @@ public struct MetricSeries: Decodable, Sendable {
     public let docLoc: [Int]
     public let churn: [Int]
     public let docChurn: [Int]
+    public let docAdded: [Int]?
+    public let docDeleted: [Int]?
     public let added: [Int]
     public let deleted: [Int]
     public let locByKind: KindSeries

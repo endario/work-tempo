@@ -382,6 +382,8 @@ class ReportInput:
     doc_loc_series: list[int]
     churn_series: list[int]
     doc_churn_series: list[int]
+    doc_added_series: list[int]
+    doc_deleted_series: list[int]
     added_series: list[int]
     deleted_series: list[int]
     loc_kind_series: dict[str, list[int]]
@@ -1146,13 +1148,30 @@ def chart_timeline_metadata(
     now: datetime | None = None,
 ) -> dict[str, int | float | None]:
     """Describe where the latest open monthly bucket should render."""
-    if period != "month" or len(labels) < 2:
+    if len(labels) < 2:
         return {
             "currentIndex": None,
             "currentProgress": 1.0,
         }
 
     local_now = (now or datetime.now(report_tz)).astimezone(report_tz)
+    if period == "day":
+        current_label = local_now.strftime("%Y-%m-%d")
+        if labels[-1] != current_label:
+            return {"currentIndex": None, "currentProgress": 1.0}
+        elapsed = (
+            local_now.hour * 3600
+            + local_now.minute * 60
+            + local_now.second
+            + local_now.microsecond / 1_000_000
+        )
+        return {
+            "currentIndex": len(labels) - 1,
+            "currentProgress": min(0.999, max(0.0, elapsed / 86_400)),
+        }
+    if period != "month":
+        return {"currentIndex": None, "currentProgress": 1.0}
+
     current_label = local_now.strftime("%Y-%m")
     if labels[-1] != current_label:
         return {
@@ -1950,6 +1969,8 @@ def build_report_data(report: ReportInput) -> dict[str, object]:
             "docLoc": report.doc_loc_series,
             "churn": report.churn_series,
             "docChurn": report.doc_churn_series,
+            "docAdded": report.doc_added_series,
+            "docDeleted": report.doc_deleted_series,
             "added": report.added_series,
             "deleted": report.deleted_series,
             "locByKind": report.loc_kind_series,
@@ -2516,6 +2537,8 @@ def main() -> int:
     doc_loc_series: list[int] = []
     churn_series: list[int] = []
     doc_churn_series: list[int] = []
+    doc_added_series: list[int] = []
+    doc_deleted_series: list[int] = []
     added_series: list[int] = []
     deleted_series: list[int] = []
     loc_kind_series: dict[str, list[int]] = {kind: [] for kind in SOURCE_KINDS}
@@ -2577,6 +2600,8 @@ def main() -> int:
         doc_loc_series.append(total_doc_loc)
         churn_series.append(total_churn)
         doc_churn_series.append(total_doc_churn)
+        doc_added_series.append(total_doc_added)
+        doc_deleted_series.append(total_doc_deleted)
         added_series.append(total_added)
         deleted_series.append(total_deleted)
         for kind in SOURCE_KINDS:
@@ -2641,6 +2666,8 @@ def main() -> int:
             doc_loc_series=doc_loc_series,
             churn_series=churn_series,
             doc_churn_series=doc_churn_series,
+            doc_added_series=doc_added_series,
+            doc_deleted_series=doc_deleted_series,
             added_series=added_series,
             deleted_series=deleted_series,
             loc_kind_series=loc_kind_series,

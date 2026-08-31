@@ -1,19 +1,5 @@
 import Foundation
 
-public enum PaceState: Equatable, Sendable {
-    case ready(share: Double)
-    case insufficientHistory
-    case newActivity
-    case noRecentActivity
-}
-
-public struct TrendPoint: Identifiable, Equatable, Sendable {
-    public var id: String { label }
-    public let label: String
-    public let code: Int
-    public let test: Int
-}
-
 public struct MomentumInput: Equatable, Sendable {
     public let labels: [String]
     public let generatedDate: String
@@ -69,10 +55,9 @@ public struct MomentumSummary: Equatable, Sendable {
     public let docsLOC: Int
     public let currentChurn: Int
     public let dailyChurn: Double
-    public let previousChurn: Int
     public let netGrowth: Int
-    public let pace: PaceState
-    public let trend: [TrendPoint]
+    public let recentChurn: [Int]
+    public let recentNetGrowth: [Int]
 
     public init(report: ReportDocument) {
         self.init(input: MomentumInput(report: report))
@@ -88,38 +73,19 @@ public struct MomentumSummary: Equatable, Sendable {
             ? max(0, input.labels.count - 1)
             : input.labels.count
         let currentStart = max(0, closedEnd - 30)
-        currentChurn = input.churn[currentStart..<closedEnd].reduce(0, +)
+        recentChurn = Array(input.churn[currentStart..<closedEnd])
+        currentChurn = recentChurn.reduce(0, +)
         dailyChurn = Double(currentChurn) / 30.0
-        netGrowth = zip(
+        var cumulativeGrowth = 0
+        recentNetGrowth = zip(
             input.added[currentStart..<closedEnd],
             input.deleted[currentStart..<closedEnd]
-        ).reduce(0) { $0 + $1.0 - $1.1 }
-
-        if closedEnd >= 60 {
-            let range = (closedEnd - 60)..<closedEnd
-            let midpoint = range.lowerBound + 30
-            previousChurn = input.churn[range.lowerBound..<midpoint].reduce(0, +)
-            let completeCurrent = input.churn[midpoint..<range.upperBound].reduce(0, +)
-            if previousChurn == 0, completeCurrent == 0 {
-                pace = .noRecentActivity
-            } else if previousChurn == 0 {
-                pace = .newActivity
-            } else {
-                pace = .ready(share: Double(completeCurrent) / Double(completeCurrent + previousChurn))
-            }
-        } else {
-            previousChurn = 0
-            pace = .insufficientHistory
+        ).map { added, deleted in
+            cumulativeGrowth += added - deleted
+            return cumulativeGrowth
         }
+        netGrowth = recentNetGrowth.last ?? 0
 
-        let firstSourceIndex = input.loc.firstIndex(where: { $0 > 0 }) ?? input.loc.count
-        trend = (firstSourceIndex..<input.labels.count).map { index in
-            TrendPoint(
-                label: input.labels[index],
-                code: input.codeLoc[index],
-                test: input.testLoc[index]
-            )
-        }
     }
 }
 

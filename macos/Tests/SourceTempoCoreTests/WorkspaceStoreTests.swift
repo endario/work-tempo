@@ -11,6 +11,7 @@ final class WorkspaceStoreTests: XCTestCase {
         let workspace = try Workspace(root: temporary.appending(path: "projects/../projects/reborn"))
 
         XCTAssertEqual(workspace.root.path, root.standardizedFileURL.resolvingSymlinksInPath().path)
+        XCTAssertTrue(workspace.root.hasDirectoryPath)
         XCTAssertEqual(workspace.displayName, "reborn")
     }
 

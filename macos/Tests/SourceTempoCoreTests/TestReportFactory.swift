@@ -11,6 +11,8 @@ func makeReportData(
     churn: [Int]? = nil,
     added: [Int]? = nil,
     deleted: [Int]? = nil,
+    docAdded: [Int]? = nil,
+    docDeleted: [Int]? = nil,
     repositoryPaths: [String] = ["/tmp/fixture"],
     timezone: String = "+08 (+08:00)",
     languages: [String: [Int]]? = nil
@@ -67,6 +69,8 @@ func makeReportData(
             "docLoc": docValues,
             "churn": churnValues,
             "docChurn": values(nil, default: 9_999),
+            "docAdded": values(docAdded, default: 0),
+            "docDeleted": values(docDeleted, default: 0),
             "added": addedValues,
             "deleted": deletedValues,
             "locByKind": ["code": codeValues, "test": testValues],

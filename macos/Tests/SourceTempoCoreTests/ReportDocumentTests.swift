@@ -15,6 +15,8 @@ final class ReportDocumentTests: XCTestCase {
         XCTAssertEqual(report.timeline.currentProgress, 0.5)
         XCTAssertEqual(report.series.addedByKind.code.count, 61)
         XCTAssertEqual(report.series.deletedByKind.test.count, 61)
+        XCTAssertEqual(report.series.docAdded?.count, 61)
+        XCTAssertEqual(report.series.docDeleted?.count, 61)
         XCTAssertEqual(Set(report.series.language.map(\.language)), ["Swift", "Test"])
     }
 
@@ -36,6 +38,40 @@ final class ReportDocumentTests: XCTestCase {
                 kind[parts[1]] = [1]
                 series[parts[0]] = kind
             }
+            object["series"] = series
+
+            XCTAssertThrowsError(try ReportDocument.decode(
+                data: JSONSerialization.data(withJSONObject: object)
+            )) { error in
+                XCTAssertEqual(error as? ReportError, .misalignedSeries(name))
+            }
+        }
+    }
+
+    func testLegacyReportWithoutDocumentationDirectionsStillDecodes() throws {
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any]
+        )
+        var series = try XCTUnwrap(object["series"] as? [String: Any])
+        series.removeValue(forKey: "docAdded")
+        series.removeValue(forKey: "docDeleted")
+        object["series"] = series
+
+        let report = try ReportDocument.decode(
+            data: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertNil(report.series.docAdded)
+        XCTAssertNil(report.series.docDeleted)
+    }
+
+    func testRejectsMisalignedDocumentationDirections() throws {
+        for name in ["docAdded", "docDeleted"] {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any]
+            )
+            var series = try XCTUnwrap(object["series"] as? [String: Any])
+            series[name] = [1]
             object["series"] = series
 
             XCTAssertThrowsError(try ReportDocument.decode(

@@ -41,8 +41,8 @@ final class CollectorContractTests: XCTestCase {
             NSString(string: report.workspace.root).resolvingSymlinksInPath,
             NSString(string: fixture.path).resolvingSymlinksInPath
         )
-        XCTAssertEqual(report.period.labels.count, 120)
-        XCTAssertEqual(report.series.loc.count, 120)
+        XCTAssertEqual(report.period.labels.count, 185)
+        XCTAssertEqual(report.series.loc.count, 185)
         XCTAssertGreaterThan(report.series.locByKind.code.last ?? 0, 0)
     }
 

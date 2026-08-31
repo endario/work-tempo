@@ -33,20 +33,16 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let dataState: SnapshotDataState
     public let isRefreshing: Bool
     public let errorMessage: String?
+    public let noticeMessage: String?
     public let menuValue: String
     public let menuAccessibilityLabel: String
     public let metrics: [SnapshotMetric]
+    public let hasMomentum: Bool
     public let dailyChurn: Double
-    public let currentChurn: Int
-    public let previousChurn: Int
     public let netGrowth: Int
-    public let paceShare: Double?
-    public let paceLabel: String
-    public let paceDetail: String
-    public let paceAccessibilityLabel: String
-    public let trend: [TrendPoint]
+    public let recentChurn: [Int]
+    public let recentNetGrowth: [Int]
     public let chartTimeline: ChartTimeline?
-    public let contextLabel: String?
     public let historyMessage: String?
 
     public init(
@@ -65,31 +61,21 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else {
             errorMessage = nil
         }
+        noticeMessage = nil
 
         guard let report else {
             dataState = errorMessage == nil ? .empty : .failedEmpty
             menuValue = "--"
             metrics = Self.emptyMetrics
+            hasMomentum = false
             dailyChurn = 0
-            currentChurn = 0
-            previousChurn = 0
             netGrowth = 0
-            paceShare = nil
-            paceLabel = isRefreshing ? "Collecting history" : "Awaiting first report"
-            if isRefreshing {
-                paceDetail = "First collection in progress"
-            } else if workspace == nil {
-                paceDetail = "Add a Git workspace to begin"
-            } else {
-                paceDetail = "No report available"
-            }
-            paceAccessibilityLabel = paceLabel
-            trend = []
+            recentChurn = []
+            recentNetGrowth = []
             chartTimeline = nil
-            contextLabel = nil
             historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
-            menuAccessibilityLabel = "SourceTempo, \(workspaceName), no report yet\(status)"
+            menuAccessibilityLabel = "Source Tempo, \(workspaceName), no report yet\(status)"
             return
         }
 
@@ -110,38 +96,15 @@ public struct DashboardSnapshot: Equatable, Sendable {
             SnapshotMetric(id: "tests", label: "TESTS", value: MetricFormatter.compact(summary.testLOC)),
             SnapshotMetric(id: "docs", label: "DOCS", value: MetricFormatter.compact(summary.docsLOC)),
         ]
-        currentChurn = summary.currentChurn
+        hasMomentum = true
         dailyChurn = summary.dailyChurn
-        previousChurn = summary.previousChurn
         netGrowth = summary.netGrowth
-        trend = summary.trend
+        recentChurn = summary.recentChurn
+        recentNetGrowth = summary.recentNetGrowth
         chartTimeline = PortfolioMomentum.chart(for: report)
-        contextLabel = nil
-        historyMessage = chartTimeline == nil ? "Extending history to 90 days" : nil
-
-        switch summary.pace {
-        case let .ready(share):
-            paceShare = share
-            let percent = Int((share * 100).rounded())
-            paceLabel = "\(percent)% recent share"
-            paceDetail = "\(Self.decimal(summary.currentChurn)) current / \(Self.decimal(summary.previousChurn)) previous"
-            paceAccessibilityLabel = "Recent 30-day churn \(Self.decimal(summary.currentChurn)), previous 30-day churn \(Self.decimal(summary.previousChurn)), \(percent) percent recent share"
-        case .insufficientHistory:
-            paceShare = nil
-            paceLabel = "Building history"
-            paceDetail = "60 closed days required"
-            paceAccessibilityLabel = "Pace unavailable, 60 closed days required"
-        case .newActivity:
-            paceShare = nil
-            paceLabel = "New activity"
-            paceDetail = "\(Self.decimal(summary.currentChurn)) current / 0 previous"
-            paceAccessibilityLabel = "New activity, recent 30-day churn \(Self.decimal(summary.currentChurn)), previous churn zero"
-        case .noRecentActivity:
-            paceShare = nil
-            paceLabel = "No recent activity"
-            paceDetail = "0 current / 0 previous"
-            paceAccessibilityLabel = "No source churn in either 30-day period"
-        }
+        historyMessage = chartTimeline == nil
+            ? "Extending history to \(HistoryWindow.chartClosedDays) days"
+            : nil
 
         var menuStatus = ""
         if isRefreshing {
@@ -149,7 +112,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "SourceTempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day\(menuStatus)"
+        menuAccessibilityLabel = "Source Tempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day\(menuStatus)"
     }
 
     public init(
@@ -163,8 +126,10 @@ public struct DashboardSnapshot: Equatable, Sendable {
         isRefreshing = refreshState == .refreshing
         if case let .failed(message) = refreshState {
             errorMessage = message
+            noticeMessage = nil
         } else {
-            errorMessage = portfolio.warning
+            errorMessage = nil
+            noticeMessage = portfolio.warning
         }
 
         let summary = portfolio.momentum?.summary
@@ -186,49 +151,16 @@ public struct DashboardSnapshot: Equatable, Sendable {
             SnapshotMetric(id: "tests", label: "TESTS", value: MetricFormatter.compact(portfolio.totals.test)),
             SnapshotMetric(id: "docs", label: "DOCS", value: MetricFormatter.compact(portfolio.totals.docs)),
         ]
+        hasMomentum = summary != nil
         dailyChurn = summary?.dailyChurn ?? 0
-        currentChurn = summary?.currentChurn ?? 0
-        previousChurn = summary?.previousChurn ?? 0
         netGrowth = summary?.netGrowth ?? 0
-        trend = summary?.trend ?? []
+        recentChurn = summary?.recentChurn ?? []
+        recentNetGrowth = summary?.recentNetGrowth ?? []
         chartTimeline = portfolio.chart
-        contextLabel = "\(portfolio.contributorCount) of \(portfolio.trackedCount) workspaces"
-            + (portfolio.watermark.map { " · through \($0)" } ?? "")
         if case let .extending(current, required) = portfolio.historyState {
             historyMessage = "Extending history · \(current) of \(required) closed days"
         } else {
             historyMessage = nil
-        }
-
-        if let summary {
-            switch summary.pace {
-            case let .ready(share):
-                paceShare = share
-                let percent = Int((share * 100).rounded())
-                paceLabel = "30-day moving average"
-                paceDetail = "\(Self.decimal(summary.currentChurn)) current / \(Self.decimal(summary.previousChurn)) previous"
-                paceAccessibilityLabel = "\(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day, \(percent) percent recent share"
-            case .insufficientHistory:
-                paceShare = nil
-                paceLabel = "30-day moving average"
-                paceDetail = "Comparison builds after 60 closed days"
-                paceAccessibilityLabel = "Daily source churn available, pace comparison building"
-            case .newActivity:
-                paceShare = nil
-                paceLabel = "30-day moving average"
-                paceDetail = "\(Self.decimal(summary.currentChurn)) current / 0 previous"
-                paceAccessibilityLabel = "New activity, \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day"
-            case .noRecentActivity:
-                paceShare = nil
-                paceLabel = "30-day moving average"
-                paceDetail = "No source churn in either period"
-                paceAccessibilityLabel = "No source churn in either 30-day period"
-            }
-        } else {
-            paceShare = nil
-            paceLabel = isRefreshing ? "Collecting history" : "Building 30-day history"
-            paceDetail = isRefreshing ? "Portfolio collection in progress" : "30 closed days required"
-            paceAccessibilityLabel = paceLabel
         }
 
         var menuStatus = ""
@@ -237,7 +169,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "SourceTempo, all workspaces, \(menuValue) source churn\(menuStatus)"
+        menuAccessibilityLabel = "Source Tempo, all workspaces, \(menuValue) source churn\(menuStatus)"
     }
 
     private static let emptyMetrics = [
@@ -246,10 +178,6 @@ public struct DashboardSnapshot: Equatable, Sendable {
         SnapshotMetric(id: "tests", label: "TESTS", value: "--"),
         SnapshotMetric(id: "docs", label: "DOCS", value: "--"),
     ]
-
-    private static func decimal(_ value: Int) -> String {
-        value.formatted(.number.grouping(.automatic))
-    }
 
     private static func parseTimestamp(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()

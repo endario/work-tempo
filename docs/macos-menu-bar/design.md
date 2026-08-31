@@ -1,5 +1,7 @@
 # SourceTempo macOS Menu-Bar Design
 
+> Historical MVP design. The aggregate scope, metric, collection, and presentation decisions are superseded by [`../aggregate-momentum/design.md`](../aggregate-momentum/design.md).
+
 ## Purpose
 
 SourceTempo's first native client turns the existing collector into an always-available view of source momentum across several independent Git workspaces. The menu-bar surface answers three questions without opening a terminal:

@@ -14,9 +14,8 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .empty)
         XCTAssertEqual(snapshot.menuValue, "--")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, fixture, no report yet")
-        XCTAssertEqual(snapshot.paceLabel, "Awaiting first report")
-        XCTAssertEqual(snapshot.paceDetail, "No report available")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, fixture, no report yet")
+        XCTAssertFalse(snapshot.hasMomentum)
         XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
 
         let refreshing = DashboardSnapshot(
@@ -25,11 +24,10 @@ final class AppSnapshotModelTests: XCTestCase {
             refreshState: .refreshing,
             now: Date(timeIntervalSince1970: 0)
         )
-        XCTAssertEqual(refreshing.paceLabel, "Collecting history")
-        XCTAssertEqual(refreshing.paceDetail, "First collection in progress")
+        XCTAssertFalse(refreshing.hasMomentum)
     }
 
-    func testCachedSnapshotExposesMetricsAndReadyPace() throws {
+    func testCachedSnapshotExposesMetricsAndMomentum() throws {
         let report = try report(
             currentChurn: 300,
             previousChurn: 150,
@@ -47,12 +45,11 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .ready)
         XCTAssertEqual(snapshot.menuValue, "10/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 10 source lines changed per day")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 10 source lines changed per day")
         XCTAssertEqual(snapshot.metrics.map(\.value), ["12K", "8K", "4.3K", "900"])
-        XCTAssertEqual(try XCTUnwrap(snapshot.paceShare), 2.0 / 3.0, accuracy: 0.0001)
-        XCTAssertEqual(snapshot.paceLabel, "67% recent share")
-        XCTAssertEqual(snapshot.paceDetail, "300 current / 150 previous")
-        XCTAssertEqual(snapshot.paceAccessibilityLabel, "Recent 30-day churn 300, previous 30-day churn 150, 67 percent recent share")
+        XCTAssertTrue(snapshot.hasMomentum)
+        XCTAssertEqual(snapshot.recentChurn.count, 30)
+        XCTAssertEqual(snapshot.recentNetGrowth.last, snapshot.netGrowth)
     }
 
     func testRefreshingAndFailedSnapshotsRetainCachedValues() throws {
@@ -69,7 +66,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertTrue(refreshing.isRefreshing)
         XCTAssertEqual(refreshing.dataState, .ready)
         XCTAssertEqual(refreshing.menuValue, "2/d")
-        XCTAssertEqual(refreshing.menuAccessibilityLabel, "SourceTempo, Fixture, 2 source lines changed per day, refreshing")
+        XCTAssertEqual(refreshing.menuAccessibilityLabel, "Source Tempo, Fixture, 2 source lines changed per day, refreshing")
 
         let failed = DashboardSnapshot(
             workspace: workspace,
@@ -93,7 +90,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .stale)
         XCTAssertEqual(snapshot.menuValue, "2/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 2 source lines changed per day, stale")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 2 source lines changed per day, stale")
     }
 
     func testFractionalCollectorTimestampDoesNotForceFreshReportStale() throws {
@@ -113,23 +110,65 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.reportGeneratedAt, generatedAt)
     }
 
-    func testPaceEdgeStatesUseLiteralNonProductivityCopy() throws {
+    func testAggregateSnapshotPublishesDailyRateAndCoverage() throws {
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
-        let cases: [(ReportDocument, String, String)] = [
-            (try report(currentChurn: 20, previousChurn: 0), "New activity", "20 current / 0 previous"),
-            (try report(currentChurn: 0, previousChurn: 0), "No recent activity", "0 current / 0 previous"),
-        ]
+        let report = try ReportDocument.decode(data: makeReportData(
+            dayCount: 185,
+            churn: Array(repeating: 2, count: 185)
+        ))
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [workspace: report]
+        ).get()
 
-        for (report, label, detail) in cases {
-            let snapshot = DashboardSnapshot(
-                workspace: workspace,
-                report: report,
-                refreshState: .idle,
-                now: try generatedAt(report)
-            )
-            XCTAssertEqual(snapshot.paceLabel, label)
-            XCTAssertEqual(snapshot.paceDetail, detail)
-        }
+        let snapshot = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: try generatedAt(report)
+        )
+
+        XCTAssertEqual(snapshot.workspaceName, "All Workspaces")
+        XCTAssertEqual(snapshot.menuValue, "2/d")
+        XCTAssertTrue(snapshot.hasMomentum)
+        XCTAssertEqual(snapshot.dailyChurn, 2)
+        XCTAssertEqual(snapshot.chartTimeline?.closedDayCount, 184)
+        XCTAssertEqual(snapshot.chartTimeline?.monthlyChurn.map(\.label), [
+            "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08",
+        ])
+    }
+
+    func testZeroChurnIsAvailableMomentum() throws {
+        let report = try self.report(currentChurn: 0, previousChurn: 0)
+        let snapshot = DashboardSnapshot(
+            workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
+            report: report,
+            refreshState: .idle,
+            now: try generatedAt(report)
+        )
+
+        XCTAssertTrue(snapshot.hasMomentum)
+        XCTAssertEqual(snapshot.menuValue, "0/d")
+        XCTAssertEqual(snapshot.dailyChurn, 0)
+        XCTAssertEqual(snapshot.netGrowth, 0)
+    }
+
+    func testPartialPortfolioUsesNoticeChannel() throws {
+        let first = try Workspace(root: URL(fileURLWithPath: "/tmp/first"))
+        let second = try Workspace(root: URL(fileURLWithPath: "/tmp/second"))
+        let report = try self.report(currentChurn: 30, previousChurn: 0)
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [first: report]
+        ).get()
+
+        let snapshot = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: try generatedAt(report)
+        )
+
+        XCTAssertNil(snapshot.errorMessage)
+        XCTAssertEqual(snapshot.noticeMessage, "1 of 2 workspaces contributing")
     }
 
     private func report(

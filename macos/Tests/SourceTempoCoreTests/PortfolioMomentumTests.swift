@@ -3,12 +3,12 @@ import XCTest
 @testable import SourceTempoCore
 
 final class PortfolioMomentumTests: XCTestCase {
-    func testUsesOneCohortAndWatermarkForTotalsRatePaceAndCharts() throws {
+    func testUsesOneCohortAndWatermarkForTotalsRateAndCharts() throws {
         let first = try workspace("first")
         let second = try workspace("second")
         let reports = [
-            first: try report(root: first.root.path, loc: 200, churn: 2, language: "Swift"),
-            second: try report(root: second.root.path, loc: 300, churn: 3, language: "Kotlin"),
+            first: try report(root: first.root.path, loc: 200, churn: 2),
+            second: try report(root: second.root.path, loc: 300, churn: 3),
         ]
 
         let portfolio = try PortfolioMomentum.build(workspaces: [first, second], reports: reports).get()
@@ -20,10 +20,11 @@ final class PortfolioMomentumTests: XCTestCase {
         let summary = try XCTUnwrap(portfolio.momentum).summary
         XCTAssertEqual(summary.dailyChurn, 5, accuracy: 0.000_001)
         XCTAssertEqual(summary.currentChurn, 150)
-        XCTAssertEqual(portfolio.chart?.closedDayCount, 90)
+        XCTAssertEqual(portfolio.chart?.closedDayCount, 184)
         XCTAssertEqual(portfolio.chart?.labels.last, "2026-08-31")
         XCTAssertEqual(portfolio.chart?.currentProgress, 0.5)
-        XCTAssertEqual(Set(portfolio.chart?.languages.map(\.language) ?? []), ["Swift", "Kotlin"])
+        XCTAssertEqual(portfolio.chart?.codeLoc.last, 460)
+        XCTAssertEqual(portfolio.chart?.testLoc.last, 40)
     }
 
     func testMissingReportProducesOnePartialCohort() throws {
@@ -60,17 +61,17 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(failure(mixed), .mixedTimezones(["+08 (+08:00)", "UTC (+00:00)"]))
     }
 
-    func testShortHistoryKeepsMetricsButWithholdsBothCharts() throws {
+    func testShortHistoryKeepsMetricsAndRendersCommonChartInterval() throws {
         let first = try workspace("first")
         let second = try workspace("second")
         let portfolio = try PortfolioMomentum.build(workspaces: [first, second], reports: [
-            first: try report(root: first.root.path, days: 120),
+            first: try report(root: first.root.path, days: 185),
             second: try report(root: second.root.path, days: 61),
         ]).get()
 
         XCTAssertEqual(portfolio.momentum?.summary.dailyChurn, 4)
-        XCTAssertNil(portfolio.chart)
-        XCTAssertEqual(portfolio.historyState, .extending(current: 60, required: 90))
+        XCTAssertEqual(portfolio.chart?.closedDayCount, 60)
+        XCTAssertEqual(portfolio.historyState, .extending(current: 60, required: 184))
     }
 
     private func workspace(_ name: String) throws -> Workspace {
@@ -79,10 +80,9 @@ final class PortfolioMomentumTests: XCTestCase {
 
     private func report(
         root: String,
-        days: Int = 120,
+        days: Int = 185,
         loc: Int = 200,
         churn: Int = 2,
-        language: String = "Swift",
         repositories: [String]? = nil,
         timezone: String = "+08 (+08:00)"
     ) throws -> ReportDocument {
@@ -95,8 +95,7 @@ final class PortfolioMomentumTests: XCTestCase {
             added: Array(repeating: churn, count: days),
             deleted: Array(repeating: 0, count: days),
             repositoryPaths: repositories ?? [root],
-            timezone: timezone,
-            languages: [language: Array(repeating: loc, count: days)]
+            timezone: timezone
         ))
     }
 
@@ -105,5 +104,59 @@ final class PortfolioMomentumTests: XCTestCase {
     ) -> PortfolioError? {
         guard case let .failure(error) = result else { return nil }
         return error
+    }
+
+    func testMonthlyChurnGroupsCalendarMonthsAndPositionsOpenMonth() throws {
+        let timeline = ChartTimeline(
+            labels: ["2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02"],
+            closedDayCount: 3,
+            currentProgress: 0.5,
+            codeLoc: [1, 1, 1, 1],
+            testLoc: [1, 1, 1, 1],
+            docLoc: [0, 0, 0, 0],
+            codeAdded: [1, 2, 3, 4],
+            testAdded: [2, 3, 4, 5],
+            codeDeleted: [3, 4, 5, 6],
+            testDeleted: [4, 5, 6, 7],
+            docAdded: [5, 6, 7, 8],
+            docDeleted: [6, 7, 8, 9]
+        )
+
+        let months = timeline.monthlyChurn
+
+        XCTAssertEqual(months.map(\.label), ["2026-07", "2026-08"])
+        XCTAssertEqual(months[0].codeAdded, 3)
+        XCTAssertEqual(months[0].docAdded, 11)
+        XCTAssertEqual(months[0].docDeleted, 13)
+        XCTAssertEqual(months[1].testDeleted, 13)
+        XCTAssertNil(months[0].currentProgress)
+        XCTAssertEqual(try XCTUnwrap(months[1].currentProgress), 1.5 / 31, accuracy: 0.000_001)
+    }
+
+    func testCumulativeChangesAccumulateEachDirectionIndependently() {
+        let timeline = ChartTimeline(
+            labels: ["2026-08-01", "2026-08-02"],
+            closedDayCount: 1,
+            currentProgress: 0.5,
+            codeLoc: [1, 1],
+            testLoc: [1, 1],
+            docLoc: [1, 1],
+            codeAdded: [1, 2],
+            testAdded: [2, 3],
+            codeDeleted: [3, 4],
+            testDeleted: [4, 5],
+            docAdded: [5, 6],
+            docDeleted: [6, 7]
+        )
+
+        XCTAssertEqual(timeline.cumulativeChanges.last, CumulativeChangePoint(
+            index: 1,
+            codeAdded: 3,
+            testAdded: 5,
+            docAdded: 11,
+            codeDeleted: 7,
+            testDeleted: 9,
+            docDeleted: 13
+        ))
     }
 }

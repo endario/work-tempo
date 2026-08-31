@@ -14,7 +14,7 @@ final class RefreshCoordinatorTests: XCTestCase {
             scope: .all,
             targets: [
                 RefreshTarget(workspace: first, generatedAt: nil, dayCount: 0),
-                RefreshTarget(workspace: second, generatedAt: now, dayCount: 120),
+                RefreshTarget(workspace: second, generatedAt: now, dayCount: 185),
             ],
             now: now,
             lowPower: false
@@ -43,7 +43,7 @@ final class RefreshCoordinatorTests: XCTestCase {
             trigger: .launch,
             scope: .all,
             targets: [
-                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 120),
+                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 185),
                 RefreshTarget(workspace: second, generatedAt: nil, dayCount: 0),
                 RefreshTarget(workspace: third, generatedAt: now.addingTimeInterval(-10_000), dayCount: 61),
             ],
@@ -58,7 +58,7 @@ final class RefreshCoordinatorTests: XCTestCase {
             trigger: .timer,
             scope: .all,
             targets: [
-                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 120),
+                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 185),
                 RefreshTarget(workspace: third, generatedAt: now.addingTimeInterval(-10_000), dayCount: 61),
             ],
             now: now,
@@ -72,8 +72,8 @@ final class RefreshCoordinatorTests: XCTestCase {
             trigger: .wake,
             scope: .all,
             targets: [
-                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 120),
-                RefreshTarget(workspace: second, generatedAt: now.addingTimeInterval(-8_000), dayCount: 120),
+                RefreshTarget(workspace: first, generatedAt: now.addingTimeInterval(-9_000), dayCount: 185),
+                RefreshTarget(workspace: second, generatedAt: now.addingTimeInterval(-8_000), dayCount: 185),
             ],
             now: now,
             lowPower: false
@@ -117,7 +117,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         let target = RefreshTarget(
             workspace: try workspace("fresh"),
             generatedAt: now.addingTimeInterval(-3_599),
-            dayCount: 120
+            dayCount: 185
         )
 
         let unattended = await coordinator.request(
