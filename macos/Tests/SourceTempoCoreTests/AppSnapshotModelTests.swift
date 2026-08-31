@@ -46,8 +46,8 @@ final class AppSnapshotModelTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.dataState, .ready)
-        XCTAssertEqual(snapshot.menuValue, "12K")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 12,345 source lines")
+        XCTAssertEqual(snapshot.menuValue, "10/d")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 10 source lines changed per day")
         XCTAssertEqual(snapshot.metrics.map(\.value), ["12K", "8K", "4.3K", "900"])
         XCTAssertEqual(try XCTUnwrap(snapshot.paceShare), 2.0 / 3.0, accuracy: 0.0001)
         XCTAssertEqual(snapshot.paceLabel, "67% recent share")
@@ -68,8 +68,8 @@ final class AppSnapshotModelTests: XCTestCase {
         )
         XCTAssertTrue(refreshing.isRefreshing)
         XCTAssertEqual(refreshing.dataState, .ready)
-        XCTAssertEqual(refreshing.menuValue, "220")
-        XCTAssertEqual(refreshing.menuAccessibilityLabel, "SourceTempo, Fixture, 220 source lines, refreshing")
+        XCTAssertEqual(refreshing.menuValue, "2/d")
+        XCTAssertEqual(refreshing.menuAccessibilityLabel, "SourceTempo, Fixture, 2 source lines changed per day, refreshing")
 
         let failed = DashboardSnapshot(
             workspace: workspace,
@@ -79,7 +79,7 @@ final class AppSnapshotModelTests: XCTestCase {
         )
         XCTAssertEqual(failed.dataState, .failedWithCache)
         XCTAssertEqual(failed.errorMessage, "collector unavailable")
-        XCTAssertEqual(failed.menuValue, "220")
+        XCTAssertEqual(failed.menuValue, "2/d")
     }
 
     func testStaleSnapshotMarksMenuWithoutDroppingData() throws {
@@ -92,8 +92,8 @@ final class AppSnapshotModelTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.dataState, .stale)
-        XCTAssertEqual(snapshot.menuValue, "220")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 220 source lines, stale")
+        XCTAssertEqual(snapshot.menuValue, "2/d")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 2 source lines changed per day, stale")
     }
 
     func testFractionalCollectorTimestampDoesNotForceFreshReportStale() throws {

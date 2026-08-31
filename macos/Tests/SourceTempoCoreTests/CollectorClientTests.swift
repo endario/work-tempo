@@ -40,7 +40,7 @@ final class CollectorClientTests: XCTestCase {
         XCTAssertEqual(arguments, [
             "--root", workspace.root.path,
             "--period", "day",
-            "--days", "61",
+            "--days", "120",
             "--workers", "2",
             "--no-html",
             "--json", reportURL.path,

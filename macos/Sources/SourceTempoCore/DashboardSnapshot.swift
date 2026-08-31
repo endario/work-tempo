@@ -36,6 +36,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let menuValue: String
     public let menuAccessibilityLabel: String
     public let metrics: [SnapshotMetric]
+    public let dailyChurn: Double
     public let currentChurn: Int
     public let previousChurn: Int
     public let netGrowth: Int
@@ -44,6 +45,9 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let paceDetail: String
     public let paceAccessibilityLabel: String
     public let trend: [TrendPoint]
+    public let chartTimeline: ChartTimeline?
+    public let contextLabel: String?
+    public let historyMessage: String?
 
     public init(
         workspace: Workspace?,
@@ -66,6 +70,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             dataState = errorMessage == nil ? .empty : .failedEmpty
             menuValue = "--"
             metrics = Self.emptyMetrics
+            dailyChurn = 0
             currentChurn = 0
             previousChurn = 0
             netGrowth = 0
@@ -80,6 +85,9 @@ public struct DashboardSnapshot: Equatable, Sendable {
             }
             paceAccessibilityLabel = paceLabel
             trend = []
+            chartTimeline = nil
+            contextLabel = nil
+            historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
             menuAccessibilityLabel = "SourceTempo, \(workspaceName), no report yet\(status)"
             return
@@ -95,7 +103,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             dataState = .ready
         }
 
-        menuValue = MetricFormatter.compact(summary.sourceLOC)
+        menuValue = MetricFormatter.compact(summary.dailyChurn) + "/d"
         metrics = [
             SnapshotMetric(id: "source", label: "SOURCE", value: MetricFormatter.compact(summary.sourceLOC)),
             SnapshotMetric(id: "code", label: "CODE", value: MetricFormatter.compact(summary.codeLOC)),
@@ -103,9 +111,13 @@ public struct DashboardSnapshot: Equatable, Sendable {
             SnapshotMetric(id: "docs", label: "DOCS", value: MetricFormatter.compact(summary.docsLOC)),
         ]
         currentChurn = summary.currentChurn
+        dailyChurn = summary.dailyChurn
         previousChurn = summary.previousChurn
         netGrowth = summary.netGrowth
         trend = summary.trend
+        chartTimeline = PortfolioMomentum.chart(for: report)
+        contextLabel = nil
+        historyMessage = chartTimeline == nil ? "Extending history to 90 days" : nil
 
         switch summary.pace {
         case let .ready(share):
@@ -137,7 +149,95 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "SourceTempo, \(workspaceName), \(Self.decimal(summary.sourceLOC)) source lines\(menuStatus)"
+        menuAccessibilityLabel = "SourceTempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day\(menuStatus)"
+    }
+
+    public init(
+        portfolio: PortfolioMomentum,
+        refreshState: SnapshotRefreshState,
+        now: Date
+    ) {
+        workspaceName = "All Workspaces"
+        workspacePath = nil
+        reportGeneratedAt = portfolio.generatedAt.flatMap(Self.parseTimestamp)
+        isRefreshing = refreshState == .refreshing
+        if case let .failed(message) = refreshState {
+            errorMessage = message
+        } else {
+            errorMessage = portfolio.warning
+        }
+
+        let summary = portfolio.momentum?.summary
+        let stale = reportGeneratedAt.map { now.timeIntervalSince($0) > 86_400 } ?? true
+        if case .failed = refreshState, portfolio.contributorCount > 0 {
+            dataState = .failedWithCache
+        } else if portfolio.contributorCount == 0 {
+            dataState = errorMessage == nil ? .empty : .failedEmpty
+        } else if stale {
+            dataState = .stale
+        } else {
+            dataState = .ready
+        }
+
+        menuValue = summary.map { MetricFormatter.compact($0.dailyChurn) + "/d" } ?? "--"
+        metrics = [
+            SnapshotMetric(id: "source", label: "SOURCE", value: MetricFormatter.compact(portfolio.totals.source)),
+            SnapshotMetric(id: "code", label: "CODE", value: MetricFormatter.compact(portfolio.totals.code)),
+            SnapshotMetric(id: "tests", label: "TESTS", value: MetricFormatter.compact(portfolio.totals.test)),
+            SnapshotMetric(id: "docs", label: "DOCS", value: MetricFormatter.compact(portfolio.totals.docs)),
+        ]
+        dailyChurn = summary?.dailyChurn ?? 0
+        currentChurn = summary?.currentChurn ?? 0
+        previousChurn = summary?.previousChurn ?? 0
+        netGrowth = summary?.netGrowth ?? 0
+        trend = summary?.trend ?? []
+        chartTimeline = portfolio.chart
+        contextLabel = "\(portfolio.contributorCount) of \(portfolio.trackedCount) workspaces"
+            + (portfolio.watermark.map { " · through \($0)" } ?? "")
+        if case let .extending(current, required) = portfolio.historyState {
+            historyMessage = "Extending history · \(current) of \(required) closed days"
+        } else {
+            historyMessage = nil
+        }
+
+        if let summary {
+            switch summary.pace {
+            case let .ready(share):
+                paceShare = share
+                let percent = Int((share * 100).rounded())
+                paceLabel = "30-day moving average"
+                paceDetail = "\(Self.decimal(summary.currentChurn)) current / \(Self.decimal(summary.previousChurn)) previous"
+                paceAccessibilityLabel = "\(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day, \(percent) percent recent share"
+            case .insufficientHistory:
+                paceShare = nil
+                paceLabel = "30-day moving average"
+                paceDetail = "Comparison builds after 60 closed days"
+                paceAccessibilityLabel = "Daily source churn available, pace comparison building"
+            case .newActivity:
+                paceShare = nil
+                paceLabel = "30-day moving average"
+                paceDetail = "\(Self.decimal(summary.currentChurn)) current / 0 previous"
+                paceAccessibilityLabel = "New activity, \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day"
+            case .noRecentActivity:
+                paceShare = nil
+                paceLabel = "30-day moving average"
+                paceDetail = "No source churn in either period"
+                paceAccessibilityLabel = "No source churn in either 30-day period"
+            }
+        } else {
+            paceShare = nil
+            paceLabel = isRefreshing ? "Collecting history" : "Building 30-day history"
+            paceDetail = isRefreshing ? "Portfolio collection in progress" : "30 closed days required"
+            paceAccessibilityLabel = paceLabel
+        }
+
+        var menuStatus = ""
+        if isRefreshing {
+            menuStatus = ", refreshing"
+        } else if dataState == .stale || dataState == .failedWithCache {
+            menuStatus = ", stale"
+        }
+        menuAccessibilityLabel = "SourceTempo, all workspaces, \(menuValue) source churn\(menuStatus)"
     }
 
     private static let emptyMetrics = [

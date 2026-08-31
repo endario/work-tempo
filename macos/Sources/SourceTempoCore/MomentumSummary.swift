@@ -124,6 +124,10 @@ public struct MomentumSummary: Equatable, Sendable {
 }
 
 public enum MetricFormatter {
+    public static func compact(_ value: Double) -> String {
+        compact(Int(value.rounded()))
+    }
+
     public static func compact(_ value: Int) -> String {
         let absolute = abs(Double(value))
         let sign = value < 0 ? "-" : ""

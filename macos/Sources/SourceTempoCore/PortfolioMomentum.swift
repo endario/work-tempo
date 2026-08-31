@@ -136,6 +136,12 @@ public struct PortfolioMomentum: Equatable, Sendable {
         ))
     }
 
+    public static func chart(for report: ReportDocument) -> ChartTimeline? {
+        let closed = closedLabels(report)
+        guard closed.count >= 90 else { return nil }
+        return makeChart(reports: [report], closedLabels: Array(closed.suffix(90)))
+    }
+
     private static func commonClosedLabels(_ reports: [ReportDocument]) -> [String] {
         guard let first = reports.first else { return [] }
         let common = reports.dropFirst().reduce(Set(closedLabels(first))) { partial, report in
