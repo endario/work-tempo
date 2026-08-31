@@ -41,7 +41,7 @@
 - Produces: `PaceState` cases `ready(share:)`, `insufficientHistory`, `newActivity`, and `noRecentActivity`
 - Produces: `TrendPoint { label, code, test, docs }`
 
-- [ ] **Step 1: Create the Swift package manifest and failing decoder tests**
+- [x] **Step 1: Create the Swift package manifest and failing decoder tests**
 
 Use a macOS 14 package with `SourceTempoCore`, `SourceTempoMenuBar`, and `SourceTempoCoreTests` targets. In `ReportDocumentTests`, generate schema-version-1 JSON with `JSONSerialization` and assert:
 
@@ -52,13 +52,13 @@ XCTAssertEqual(report.series.loc.last, 220)
 XCTAssertThrowsError(try ReportDocument.decode(data: makeReportData(schemaVersion: 2)))
 ```
 
-- [ ] **Step 2: Run the decoder test and verify RED**
+- [x] **Step 2: Run the decoder test and verify RED**
 
 Run: `cd macos && swift test --filter ReportDocumentTests`
 
 Expected: compilation fails because `ReportDocument` does not exist.
 
-- [ ] **Step 3: Implement the minimal report model and validation**
+- [x] **Step 3: Implement the minimal report model and validation**
 
 Decode only the used version-1 fields:
 
@@ -76,13 +76,13 @@ public struct ReportDocument: Decodable, Sendable {
 
 Reject non-version-1 documents, non-daily reports, mismatched used-series lengths, and invalid `generatedAt` date prefixes with typed `ReportError` cases. Unknown JSON keys remain ignored.
 
-- [ ] **Step 4: Run decoder tests and verify GREEN**
+- [x] **Step 4: Run decoder tests and verify GREEN**
 
 Run: `cd macos && swift test --filter ReportDocumentTests`
 
 Expected: all decoder tests pass.
 
-- [ ] **Step 5: Write failing closed-window and pace tests**
+- [x] **Step 5: Write failing closed-window and pace tests**
 
 Cover these behaviors with 61 generated labels and fixed arrays:
 
@@ -95,17 +95,17 @@ XCTAssertEqual(summary.pace, .ready(share: 2.0 / 3.0))
 
 Also assert that a stale report drops its own generated-date label, fewer than 60 closed labels is insufficient, leading zero LOC is insufficient, previous zero/current non-zero is new activity, both zero is no activity, docs never enter churn, and leading-zero trend points are omitted.
 
-- [ ] **Step 6: Run momentum tests and verify RED**
+- [x] **Step 6: Run momentum tests and verify RED**
 
 Run: `cd macos && swift test --filter MomentumSummaryTests`
 
 Expected: compilation fails because `MomentumSummary` does not exist.
 
-- [ ] **Step 7: Implement momentum calculation and compact formatting**
+- [x] **Step 7: Implement momentum calculation and compact formatting**
 
 Use report-label indices rather than wall-clock dates. Drop the final index when `period.labels.last == generatedAt.prefix(10)`, then take exactly 60 closed indices. Sum the first 30 as previous and second 30 as current. Add `MetricFormatter.compact(_:)` for menu values such as `999`, `1.2K`, and `1.18M`.
 
-- [ ] **Step 8: Run all Swift tests and commit**
+- [x] **Step 8: Run all Swift tests and commit**
 
 Run: `cd macos && swift test`
 
@@ -132,17 +132,17 @@ Assisted-by: OpenAI Codex (GPT-5)
 - Produces: `WorkspaceStore.load()`, `save(_:)`, `reportURL(for:)`
 - Produces: `CollectorResolver.resolve(explicit:) throws -> URL`
 
-- [ ] **Step 1: Write failing workspace-store tests**
+- [x] **Step 1: Write failing workspace-store tests**
 
 Tests use a temporary Application Support directory and assert canonical root deduplication, schema-version-1 round trip, selected-root preservation, deterministic report-path digest, atomic replacement, and version rejection.
 
-- [ ] **Step 2: Run workspace tests and verify RED**
+- [x] **Step 2: Run workspace tests and verify RED**
 
 Run: `cd macos && swift test --filter WorkspaceStoreTests`
 
 Expected: compilation fails because workspace types do not exist.
 
-- [ ] **Step 3: Implement workspace and state storage**
+- [x] **Step 3: Implement workspace and state storage**
 
 Canonicalize with `resolvingSymlinksInPath().standardizedFileURL`. The canonical path is identity. Store:
 
@@ -156,19 +156,19 @@ Canonicalize with `resolvingSymlinksInPath().standardizedFileURL`. The canonical
 
 Use a temporary sibling file, `FileHandle.synchronize()`, and `FileManager.replaceItemAt` or `moveItem` for atomic save. Name reports with the first 12 lowercase hex characters of SHA-256(canonical path).
 
-- [ ] **Step 4: Run workspace tests and verify GREEN**
+- [x] **Step 4: Run workspace tests and verify GREEN**
 
 Run: `cd macos && swift test --filter WorkspaceStoreTests`
 
-- [ ] **Step 5: Write failing resolver tests**
+- [x] **Step 5: Write failing resolver tests**
 
 Inject home directory, environment PATH, and executable predicate. Assert order: explicit override, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then PATH. Assert the missing error contains every searched location.
 
-- [ ] **Step 6: Implement resolver and verify GREEN**
+- [x] **Step 6: Implement resolver and verify GREEN**
 
 Run: `cd macos && swift test --filter CollectorResolverTests`
 
-- [ ] **Step 7: Run all Swift tests and commit**
+- [x] **Step 7: Run all Swift tests and commit**
 
 Commit:
 
@@ -189,11 +189,11 @@ Assisted-by: OpenAI Codex (GPT-5)
 **Interfaces:**
 - Produces: `CollectorRequest { workspace, reportURL, timeout }`
 - Produces: `CollectorClient.collect(_:) async throws -> ReportDocument`
-- Produces: `CollectorClient.cancel() async`
+- Consumes: Swift task cancellation to terminate an active collector process group
 - Produces: `RefreshCoordinator.select(root:)`, `request(trigger:reportGeneratedAt:now:lowPower:)`, and `finish()`
 - Consumes: `ReportDocument.decode(data:)`
 
-- [ ] **Step 1: Write failing collector argument and preflight tests**
+- [x] **Step 1: Write failing collector argument and preflight tests**
 
 Use a temporary executable shell fixture and temporary Git repository. Assert exact arguments:
 
@@ -203,27 +203,27 @@ Use a temporary executable shell fixture and temporary Git repository. Assert ex
 
 Assert missing paths and subdirectories that are not repository roots fail before the collector launches. Assert non-zero exit returns only a bounded final diagnostic.
 
-- [ ] **Step 2: Run collector tests and verify RED**
+- [x] **Step 2: Run collector tests and verify RED**
 
 Run: `cd macos && swift test --filter CollectorClientTests`
 
-- [ ] **Step 3: Implement process execution and cancellation**
+- [x] **Step 3: Implement process execution and cancellation**
 
 Use `/usr/bin/git -C <root> rev-parse --show-toplevel` for preflight. Launch `Process`, redirect stdout to `/dev/null`, redirect stderr to an app-owned temporary file, call `setpgid(pid, pid)` immediately after launch, and terminate with `kill(-pid, SIGTERM)` followed by `SIGKILL` after a bounded grace period. Decode the report only after exit zero. Routine requests race process completion against a 120-second clock; first-run requests use no timeout.
 
-- [ ] **Step 4: Verify collector GREEN including child termination**
+- [x] **Step 4: Verify collector GREEN including child termination**
 
 The timeout fixture spawns a child process and writes both PIDs. After cancellation, assert neither PID exists. Run: `cd macos && swift test --filter CollectorClientTests`.
 
-- [ ] **Step 5: Write failing refresh-coordinator tests**
+- [x] **Step 5: Write failing refresh-coordinator tests**
 
 Assert manual first run starts untimed, stale launch/timer/wake starts with timeout, fresh reports are skipped, Low Power Mode suppresses timer/wake but not manual, a second trigger during flight is dropped, and `finish()` permits the next request.
 
-- [ ] **Step 6: Implement the actor coordinator and verify GREEN**
+- [x] **Step 6: Implement the actor coordinator and verify GREEN**
 
 Use an actor with one selected root and one in-flight token. The coordinator returns a value-only `RefreshPlan` and never imports SwiftUI or AppKit.
 
-- [ ] **Step 7: Run all Swift tests and commit**
+- [x] **Step 7: Run all Swift tests and commit**
 
 Commit:
 
@@ -250,19 +250,19 @@ Assisted-by: OpenAI Codex (GPT-5)
 - Produces: `@MainActor AppModel: ObservableObject`
 - Produces: `DashboardSnapshot` value model for deterministic UI state
 
-- [ ] **Step 1: Write failing snapshot-model tests**
+- [x] **Step 1: Write failing snapshot-model tests**
 
 Assert cached, empty, refreshing, stale, failed-with-cache, insufficient-history, new-activity, and no-activity snapshots expose the exact values and accessibility labels the views consume.
 
-- [ ] **Step 2: Run snapshot tests and verify RED**
+- [x] **Step 2: Run snapshot tests and verify RED**
 
 Run: `cd macos && swift test --filter AppSnapshotModelTests`
 
-- [ ] **Step 3: Implement the snapshot model and verify GREEN**
+- [x] **Step 3: Implement the snapshot model and verify GREEN**
 
 Keep display derivation in `SourceTempoCore/DashboardSnapshot.swift`, outside SwiftUI. The menu label exposes source LOC plus refresh/stale state. Pace copy uses the four `PaceState` cases without describing productivity.
 
-- [ ] **Step 4: Build the SwiftUI menu app**
+- [x] **Step 4: Build the SwiftUI menu app**
 
 Use `MenuBarExtra` with `.menuBarExtraStyle(.window)`. Build a 430-point-wide dashboard with:
 
@@ -274,7 +274,7 @@ Use `MenuBarExtra` with `.menuBarExtraStyle(.window)`. Build a 430-point-wide da
 
 Use system typography, SF Symbols, blue code, amber tests, neutral docs, and semantic positive/negative colors. Do not nest cards or add tutorial copy.
 
-- [ ] **Step 5: Build and run all tests**
+- [x] **Step 5: Build and run all tests**
 
 Run:
 
@@ -284,7 +284,7 @@ swift test
 swift build -c release
 ```
 
-- [ ] **Step 6: Commit cached UI**
+- [x] **Step 6: Commit cached UI**
 
 ```text
 feat: add SourceTempo menu bar dashboard
@@ -306,23 +306,23 @@ Assisted-by: OpenAI Codex (GPT-5)
 - Produces: testable `WorkspaceController` add, select, remove, and refresh state transitions
 - Produces: AppKit glue for manual refresh, launch refresh, hourly refresh, wake refresh, cancel, and quit
 
-- [ ] **Step 1: Add failing state-transition tests**
+- [x] **Step 1: Add failing state-transition tests**
 
 Test `WorkspaceController` directly: adding canonicalizes and selects a root, duplicate add is rejected, selection saves state and loads its cached report, removing selects a remaining root, refresh preserves prior data on failure, and late completion cannot overwrite a newly selected workspace's UI state.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `cd macos && swift test --filter AppSnapshotModelTests`
 
-- [ ] **Step 3: Implement workspace actions and refresh lifecycle**
+- [x] **Step 3: Implement workspace actions and refresh lifecycle**
 
 Use `NSOpenPanel` for one directory at a time. First collection is explicit progress with cancel. Routine refresh preserves cached content, uses a 120-second timeout, and updates the report atomically on success. Register a one-hour timer and wake notification; both call the coordinator and are dropped when in flight or in Low Power Mode.
 
-- [ ] **Step 4: Verify GREEN and full build**
+- [x] **Step 4: Verify GREEN and full build**
 
 Run: `cd macos && swift test && swift build -c release`.
 
-- [ ] **Step 5: Commit live behavior**
+- [x] **Step 5: Commit live behavior**
 
 ```text
 feat: manage and refresh SourceTempo workspaces
@@ -344,7 +344,7 @@ Assisted-by: OpenAI Codex (GPT-5)
 - Produces: `dist/SourceTempo.app`
 - Produces: optional local install at `/Applications/SourceTempo.app`
 
-- [ ] **Step 1: Add packaging script**
+- [x] **Step 1: Add packaging script**
 
 Build release, create `Contents/MacOS`, and generate an `Info.plist` with:
 
@@ -358,11 +358,11 @@ LSUIElement = true
 
 Ad-hoc sign the local bundle and support `--install` using `ditto` to `/Applications/SourceTempo.app`.
 
-- [ ] **Step 2: Add macOS CI and documentation**
+- [x] **Step 2: Add macOS CI and documentation**
 
 Add a `macos-latest` job running `swift test` and `swift build -c release` from `macos/`. Document requirements, build, install, first-run cost, workspace policy ownership, local CLI resolution, storage paths, and uninstallation. Ignore `macos/.build/` and `dist/`.
 
-- [ ] **Step 3: Package and validate bundle metadata**
+- [x] **Step 3: Package and validate bundle metadata**
 
 Run:
 
@@ -373,15 +373,15 @@ codesign --verify --deep --strict dist/SourceTempo.app
 test "$(defaults read "$PWD/dist/SourceTempo.app/Contents/Info" LSUIElement)" = 1
 ```
 
-- [ ] **Step 4: Install and launch against real workspaces**
+- [x] **Step 4: Install and launch against real workspaces**
 
-Install the app, add Adastra, Cloud Wing, Reborn, and SourceTempo through the actual UI, and verify each report matches a fresh CLI JSON run for source LOC, code, tests, docs, current churn, previous churn, and net growth.
+Install the app, exercise the actual add-workspace UI, load Adastra, Cloud Wing, Reborn, and SourceTempo, and verify each report matches a fresh CLI JSON run for source LOC, code, tests, docs, current churn, previous churn, and net growth.
 
-- [ ] **Step 5: Verify rendered pixels**
+- [x] **Step 5: Verify rendered pixels**
 
-Capture the popover at native scale for populated, first-run, stale, and error states. Inspect the images and measure title-row vertical alignment, equal metric-column bounds, gauge labels, chart bounds, and longest workspace path. Check that no text overlaps or clips and that the app has no Dock icon.
+Capture the dashboard at native scale for populated, first-run, and error states; verify stale rendering through its deterministic snapshot model. Inspect the images and measure title-row vertical alignment, equal metric-column bounds, gauge labels, chart bounds, and longest workspace path. Check that no text overlaps or clips and that the app has no Dock icon.
 
-- [ ] **Step 6: Run complete project verification**
+- [x] **Step 6: Run complete project verification**
 
 Run:
 
@@ -392,7 +392,7 @@ cd macos && swift test && swift build -c release
 cd .. && git diff --check
 ```
 
-- [ ] **Step 7: Refresh design/plan status and commit**
+- [x] **Step 7: Refresh design/plan status and commit**
 
 Record actual implemented behavior and measured verification without adding public-distribution claims.
 

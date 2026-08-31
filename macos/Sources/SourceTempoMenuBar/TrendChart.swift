@@ -6,45 +6,57 @@ struct TrendChart: View {
     let points: [TrendPoint]
 
     var body: some View {
-        Chart(points) { point in
-            AreaMark(
-                x: .value("Day", point.label),
-                yStart: .value("Code baseline", 0),
-                yEnd: .value("Code", point.code)
-            )
-            .foregroundStyle(Color.blue.opacity(0.22))
-            .interpolationMethod(.catmullRom)
+        Chart {
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                AreaMark(
+                    x: .value("Day", index),
+                    yStart: .value("Code baseline", 0),
+                    yEnd: .value("Code", point.code),
+                    series: .value("Series", "Code")
+                )
+                .foregroundStyle(Color.blue.opacity(0.22))
+                .interpolationMethod(.catmullRom)
+            }
 
-            AreaMark(
-                x: .value("Day", point.label),
-                yStart: .value("Test baseline", point.code),
-                yEnd: .value("Source", point.code + point.test)
-            )
-            .foregroundStyle(Color.orange.opacity(0.25))
-            .interpolationMethod(.catmullRom)
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                AreaMark(
+                    x: .value("Day", index),
+                    yStart: .value("Test baseline", point.code),
+                    yEnd: .value("Source", point.code + point.test),
+                    series: .value("Series", "Tests")
+                )
+                .foregroundStyle(Color.orange.opacity(0.25))
+                .interpolationMethod(.catmullRom)
+            }
 
-            LineMark(
-                x: .value("Day", point.label),
-                y: .value("Code", point.code)
-            )
-            .foregroundStyle(Color.blue)
-            .lineStyle(StrokeStyle(lineWidth: 1.5))
-            .interpolationMethod(.catmullRom)
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                LineMark(
+                    x: .value("Day", index),
+                    y: .value("Code", point.code),
+                    series: .value("Series", "Code")
+                )
+                .foregroundStyle(Color.blue)
+                .lineStyle(StrokeStyle(lineWidth: 1.5))
+                .interpolationMethod(.catmullRom)
+            }
 
-            LineMark(
-                x: .value("Day", point.label),
-                y: .value("Source", point.code + point.test)
-            )
-            .foregroundStyle(Color.orange)
-            .lineStyle(StrokeStyle(lineWidth: 1.5))
-            .interpolationMethod(.catmullRom)
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                LineMark(
+                    x: .value("Day", index),
+                    y: .value("Source", point.code + point.test),
+                    series: .value("Series", "Tests")
+                )
+                .foregroundStyle(Color.orange)
+                .lineStyle(StrokeStyle(lineWidth: 1.5))
+                .interpolationMethod(.catmullRom)
+            }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+            AxisMarks(values: tickIndices) { value in
                 AxisGridLine().foregroundStyle(.clear)
                 AxisValueLabel {
-                    if let label = value.as(String.self) {
-                        Text(String(label.suffix(5)))
+                    if let index = value.as(Int.self), points.indices.contains(index) {
+                        Text(String(points[index].label.suffix(5)))
                     }
                 }
             }
@@ -61,5 +73,10 @@ struct TrendChart: View {
         }
         .frame(height: 150)
         .accessibilityLabel("Sixty-day source line trend")
+    }
+
+    private var tickIndices: [Int] {
+        guard points.count > 1 else { return points.isEmpty ? [] : [0] }
+        return [0, points.count / 3, (points.count * 2) / 3, points.count - 1]
     }
 }

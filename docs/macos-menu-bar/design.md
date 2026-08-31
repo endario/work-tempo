@@ -81,6 +81,8 @@ macos/
       MenuBarLabel.swift
       DashboardView.swift
       TrendChart.swift
+      PaceGauge.swift
+      DebugPreview.swift
   Tests/
     SourceTempoCoreTests/
 scripts/
@@ -88,6 +90,8 @@ scripts/
 ```
 
 `SourceTempoCore` owns JSON decoding, momentum calculations, workspace persistence, executable discovery, process execution, and refresh coordination. Executable discovery and process execution are separate small types so a bundled public collector replaces resolution policy without rewriting the client. Clock and process-running protocols make scheduling, single-flight behavior, cancellation, timeout, wake refresh, and staleness testable without importing SwiftUI. `SourceTempoMenuBar` owns application lifecycle and presentation.
+
+`DebugPreview.swift` is compiled only in debug builds. It renders the same dashboard view in an ordinary window when `SOURCE_TEMPO_PREVIEW=1`, allowing deterministic screenshot and accessibility inspection without adding a window or Dock presence to the release app.
 
 The executable uses `MenuBarExtra` with window style. `LSUIElement` in the packaged app's `Info.plist` suppresses its Dock icon. The Swift package remains dependency-free outside Apple frameworks.
 

@@ -5,6 +5,9 @@ import SwiftUI
 @main
 struct SourceTempoApp: App {
     @StateObject private var model = AppModel()
+#if DEBUG
+    @NSApplicationDelegateAdaptor(DebugPreviewDelegate.self) private var previewDelegate
+#endif
 
     var body: some Scene {
         MenuBarExtra {

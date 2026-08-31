@@ -16,7 +16,17 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.menuValue, "--")
         XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, fixture, no report yet")
         XCTAssertEqual(snapshot.paceLabel, "Awaiting first report")
+        XCTAssertEqual(snapshot.paceDetail, "No report available")
         XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
+
+        let refreshing = DashboardSnapshot(
+            workspace: workspace,
+            report: nil,
+            refreshState: .refreshing,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(refreshing.paceLabel, "Collecting history")
+        XCTAssertEqual(refreshing.paceDetail, "First collection in progress")
     }
 
     func testCachedSnapshotExposesMetricsAndReadyPace() throws {
@@ -86,6 +96,23 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.menuAccessibilityLabel, "SourceTempo, Fixture, 220 source lines, stale")
     }
 
+    func testFractionalCollectorTimestampDoesNotForceFreshReportStale() throws {
+        let data = try XCTUnwrap(String(data: makeReportData(), encoding: .utf8))
+            .replacingOccurrences(of: "2026-08-31T12:00:00+08:00", with: "2026-08-31T12:00:00.228700+08:00")
+        let report = try ReportDocument.decode(data: Data(data.utf8))
+        let generatedAt = try XCTUnwrap(ISO8601DateFormatter.fractional.date(from: report.generatedAt))
+
+        let snapshot = DashboardSnapshot(
+            workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
+            report: report,
+            refreshState: .idle,
+            now: generatedAt.addingTimeInterval(60)
+        )
+
+        XCTAssertEqual(snapshot.dataState, .ready)
+        XCTAssertEqual(snapshot.reportGeneratedAt, generatedAt)
+    }
+
     func testPaceEdgeStatesUseLiteralNonProductivityCopy() throws {
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
         let cases: [(ReportDocument, String, String)] = [
@@ -133,5 +160,13 @@ final class AppSnapshotModelTests: XCTestCase {
 
     private func generatedAt(_ report: ReportDocument) throws -> Date {
         try XCTUnwrap(ISO8601DateFormatter().date(from: report.generatedAt))
+    }
+}
+
+private extension ISO8601DateFormatter {
+    static var fractional: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
     }
 }

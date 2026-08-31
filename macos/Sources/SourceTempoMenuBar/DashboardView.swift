@@ -36,17 +36,22 @@ struct DashboardView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Picker("Workspace", selection: Binding(
-                        get: { model.selectedWorkspace },
-                        set: { if let workspace = $0 { model.select(workspace) } }
-                    )) {
-                        ForEach(model.workspaces, id: \.root.path) { workspace in
-                            Text(workspace.displayName).tag(Optional(workspace))
+                    HStack(spacing: 7) {
+                        Picker("Workspace", selection: Binding(
+                            get: { model.selectedWorkspace },
+                            set: { if let workspace = $0 { model.select(workspace) } }
+                        )) {
+                            ForEach(model.workspaces, id: \.root.path) { workspace in
+                                Text(workspace.displayName).tag(Optional(workspace))
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .fixedSize()
+                        Text(lastUpdatedLabel)
+                            .font(.caption2)
+                            .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
                 }
             }
             Spacer()
@@ -122,33 +127,43 @@ struct DashboardView: View {
             Text("WORKSPACES")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            ForEach(model.workspaceRows) { row in
-                Button { model.select(row.workspace) } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: row.workspace == model.selectedWorkspace ? "circle.inset.filled" : "circle")
-                            .foregroundStyle(row.workspace == model.selectedWorkspace ? Color.accentColor : Color.secondary)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(row.workspace.displayName)
-                                .font(.callout.weight(.medium))
-                            Text(row.workspace.root.path)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+            ScrollView {
+                LazyVStack(spacing: 7) {
+                    ForEach(model.workspaceRows) { row in
+                        Button { model.select(row.workspace) } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: row.workspace == model.selectedWorkspace ? "circle.inset.filled" : "circle")
+                                    .foregroundStyle(row.workspace == model.selectedWorkspace ? Color.accentColor : Color.secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(row.workspace.displayName)
+                                        .font(.callout.weight(.medium))
+                                    Text(row.workspace.root.path)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                Spacer()
+                                if row.hasError {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundStyle(.red)
+                                        .help("Refresh failed")
+                                }
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(row.sourceValue)
+                                        .font(.callout.monospacedDigit())
+                                    Text("\(row.churnValue) / 30d")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
                         }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 1) {
-                            Text(row.sourceValue)
-                                .font(.callout.monospacedDigit())
-                            Text("\(row.churnValue) / 30d")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
             }
+            .frame(height: min(CGFloat(model.workspaceRows.count) * 38, 180))
         }
     }
 
@@ -207,5 +222,11 @@ struct DashboardView: View {
         .padding(9)
         .background(Color.red.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var lastUpdatedLabel: String {
+        if model.snapshot.isRefreshing { return "Refreshing" }
+        guard let date = model.snapshot.reportGeneratedAt else { return "No report" }
+        return "Updated \(date.formatted(date: .omitted, time: .shortened))"
     }
 }

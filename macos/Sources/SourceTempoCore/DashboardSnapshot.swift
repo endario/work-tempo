@@ -54,7 +54,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     ) {
         workspaceName = report?.workspace.title ?? workspace?.displayName ?? "No workspace"
         workspacePath = workspace?.root.path
-        reportGeneratedAt = report.flatMap { ISO8601DateFormatter().date(from: $0.generatedAt) }
+        reportGeneratedAt = report.flatMap { Self.parseTimestamp($0.generatedAt) }
         isRefreshing = refreshState == .refreshing
         if case let .failed(message) = refreshState {
             errorMessage = message
@@ -70,8 +70,14 @@ public struct DashboardSnapshot: Equatable, Sendable {
             previousChurn = 0
             netGrowth = 0
             paceShare = nil
-            paceLabel = "Awaiting first report"
-            paceDetail = "Add a Git workspace to begin"
+            paceLabel = isRefreshing ? "Collecting history" : "Awaiting first report"
+            if isRefreshing {
+                paceDetail = "First collection in progress"
+            } else if workspace == nil {
+                paceDetail = "Add a Git workspace to begin"
+            } else {
+                paceDetail = "No report available"
+            }
             paceAccessibilityLabel = paceLabel
             trend = []
             let status = isRefreshing ? ", refreshing" : ""
@@ -143,5 +149,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
 
     private static func decimal(_ value: Int) -> String {
         value.formatted(.number.grouping(.automatic))
+    }
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }

@@ -9,6 +9,8 @@ It measures:
 - Language composition and per-repository contribution.
 - Documentation LOC and churn as separate informational metrics.
 
+The optional native macOS menu-bar app keeps the selected workspace's source LOC and recent 30-day pace visible without opening a terminal.
+
 Repository comparison and component classification are outside SourceTempo's scope.
 
 ## Requirements
@@ -149,6 +151,42 @@ Reports currently use schema version 1. Additive fields may be introduced within
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src tests
+```
+
+### macOS menu-bar app
+
+The local app requires macOS 14 or newer on Apple Silicon, Swift 6, and an installed `source-tempo` CLI. It resolves the collector from `~/.local/bin`, Homebrew locations, and then `PATH`.
+
+Build an ad-hoc signed app bundle:
+
+```bash
+scripts/build-macos-app.sh
+open dist/SourceTempo.app
+```
+
+Install the local build in `/Applications`:
+
+```bash
+scripts/build-macos-app.sh --install
+open /Applications/SourceTempo.app
+```
+
+Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The app renders its last successful report immediately, refreshes only the selected workspace once per hour and after wake, and skips unattended collection in Low Power Mode. A cold first collection is visible and has no timeout because it may take several minutes; later refreshes use two workers and stop after two minutes.
+
+App state and saved reports live under:
+
+```text
+~/Library/Application Support/SourceTempo/
+```
+
+The collector's existing cache remains under `~/Library/Caches/SourceTempo/`, shared with terminal runs. Removing a workspace from the app does not alter its source repository. To uninstall, quit SourceTempo and remove `/Applications/SourceTempo.app`; remove the Application Support directory separately only when its saved workspace list and reports are no longer wanted.
+
+Swift development checks:
+
+```bash
+cd macos
+swift test
+swift build -c release
 ```
 
 The repository remains private during extraction. See [PROVENANCE.md](PROVENANCE.md) for the source boundary and licensing status.
