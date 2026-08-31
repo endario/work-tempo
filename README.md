@@ -109,26 +109,6 @@ Additional repositories use paths relative to the main checkout:
 
 Only actual Git repository roots are counted. Missing or uninitialized configured repositories are reported and skipped.
 
-## Migrating From `loc-history.py`
-
-The extracted collector uses the same workspace-policy schema. Rename or copy a
-tracked `.loc-history.json` to `.source-tempo.json`, and rename any personal
-`.loc-history.local.json` override to `.source-tempo.local.json`.
-
-Then run both collectors once with explicit JSON outputs and compare their report
-documents, ignoring `generatedAt` because the runs occur at different moments:
-
-```bash
-source-tempo --root ~/projects/my-app \
-  --html /tmp/source-tempo.html \
-  --json /tmp/source-tempo.json \
-  --clear-cache
-```
-
-SourceTempo stores its default HTML and cache under the user cache directory rather
-than inside the measured repository. Pass explicit `--html` or `--cache` paths when a
-stable legacy location is required.
-
 ## Counting Model
 
 LOC snapshots count newline-delimited tracked source files from the last commit available at each period cutoff. Source and tests are separated using conventional test directories and test/spec/e2e filename patterns.
