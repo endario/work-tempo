@@ -36,15 +36,6 @@ public struct ReportDocument: Decodable, Sendable {
         String(generatedAt.prefix(10))
     }
 
-    public var closedDayRange: Range<Int>? {
-        var end = period.labels.count
-        if period.labels.last == generatedDate {
-            end -= 1
-        }
-        guard end >= 60 else { return nil }
-        return (end - 60)..<end
-    }
-
     public static func decode(data: Data) throws -> ReportDocument {
         let document = try JSONDecoder().decode(ReportDocument.self, from: data)
         guard document.schemaVersion == 1 else {

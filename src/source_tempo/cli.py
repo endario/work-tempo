@@ -590,18 +590,10 @@ def atomic_write_text(path: Path, content: str) -> None:
             temp_path.unlink(missing_ok=True)
 
 
-def save_cache(path: Path | None, cache: dict) -> None:
-    if path is None:
+def save_cache(path: Path | None, cache: dict | None) -> None:
+    if path is None or cache is None:
         return
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
-
-
-def checkpoint_cache(
-    path: Path | None,
-    cache: dict | None,
-) -> None:
-    if cache is not None:
-        save_cache(path, cache)
 
 
 def snapshot_cache_key(label: str, commit: str, include_vendor: bool) -> str:
@@ -2495,7 +2487,7 @@ def main() -> int:
             done_count += 1
             if done_count % 20 == 0 or done_count == len(tasks):
                 print(f"  {done_count}/{len(tasks)}", flush=True)
-                checkpoint_cache(cache_path, cache)
+                save_cache(cache_path, cache)
     elif tasks:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
@@ -2518,7 +2510,7 @@ def main() -> int:
                 done_count += 1
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
-                    checkpoint_cache(cache_path, cache)
+                    save_cache(cache_path, cache)
 
     # ------------------------------------------------------- aggregation
     period_column = "Day" if args.period == "day" else "Month"

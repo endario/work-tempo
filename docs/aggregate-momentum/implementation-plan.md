@@ -50,8 +50,6 @@
 
 **Interfaces:**
 - Produces: decoded `scope.repositories`, `timeline`, `series.language`, `addedByKind`, and `deletedByKind` with alignment validation.
-- Produces: `checkpoint_cache(path, cache)` used after churn and every snapshot progress batch.
-
 - [ ] Add failing Swift tests for the new fields and each misaligned nested series.
 - [ ] Add failing Python tests proving an intermediate cache checkpoint is atomic and contains newly completed snapshot entries.
 - [ ] Extend report decoding and validation without changing report schema version.

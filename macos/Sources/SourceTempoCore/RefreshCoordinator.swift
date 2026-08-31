@@ -82,8 +82,7 @@ public actor RefreshCoordinator {
         return selected.map { target in
             RefreshPlan(
                 workspace: target.workspace,
-                timeout: !target.lastAttemptFailed
-                    && (target.generatedAt == nil || target.dayCount < requiredDayCount)
+                timeout: target.generatedAt == nil || target.dayCount < requiredDayCount
                     ? nil
                     : .seconds(120)
             )

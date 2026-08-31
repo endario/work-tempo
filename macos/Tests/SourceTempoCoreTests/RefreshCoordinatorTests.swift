@@ -9,13 +9,14 @@ final class RefreshCoordinatorTests: XCTestCase {
         let second = try workspace("second")
         let now = Date(timeIntervalSince1970: 10_000)
 
+        let targets = [
+            RefreshTarget(workspace: first, generatedAt: nil, dayCount: 0),
+            RefreshTarget(workspace: second, generatedAt: now, dayCount: 185),
+        ]
         let plans = await coordinator.request(
             trigger: .manual,
             scope: .all,
-            targets: [
-                RefreshTarget(workspace: first, generatedAt: nil, dayCount: 0),
-                RefreshTarget(workspace: second, generatedAt: now, dayCount: 185),
-            ],
+            targets: targets,
             now: now,
             lowPower: false
         )
@@ -25,7 +26,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         let duplicate = await coordinator.request(
             trigger: .manual,
             scope: .all,
-            targets: [],
+            targets: targets,
             now: now,
             lowPower: false
         )
@@ -179,7 +180,7 @@ final class RefreshCoordinatorTests: XCTestCase {
             lowPower: false
         )
         XCTAssertEqual(plans?.map(\.workspace), [failed])
-        XCTAssertEqual(plans?.first?.timeout, .seconds(120))
+        XCTAssertNil(plans?.first?.timeout)
     }
 
     private func workspace(_ name: String) throws -> Workspace {

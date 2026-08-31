@@ -145,7 +145,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         }
 
         menuValue = summary.map { MetricFormatter.compact($0.dailyChurn) + "/d" } ?? "--"
-        metrics = [
+        metrics = portfolio.contributorCount == 0 ? Self.emptyMetrics : [
             SnapshotMetric(id: "source", label: "SOURCE", value: MetricFormatter.compact(portfolio.totals.source)),
             SnapshotMetric(id: "code", label: "CODE", value: MetricFormatter.compact(portfolio.totals.code)),
             SnapshotMetric(id: "tests", label: "TESTS", value: MetricFormatter.compact(portfolio.totals.test)),

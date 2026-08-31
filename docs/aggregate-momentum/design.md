@@ -25,7 +25,7 @@ The app has two display scopes:
 - **All Workspaces**: the default after installation and when migrating current persisted state.
 - **One workspace**: selected explicitly from the header menu.
 
-Workspace state remains schema version 1 and gains an optional `selectedScope` field. Its absence identifies state written by the current release and deliberately overrides the prior selection with All Workspaces once. New state writes either `all` or a workspace root, and continues writing `selectedRoot` alongside it.
+Workspace state remains schema version 1 and gains an optional `selectedScope` field. New state writes either `all` or a workspace root, and continues writing `selectedRoot` alongside it.
 
 In memory, selection is an explicit `DisplayScope` enum with `all` and `workspace(Workspace)` cases. An empty workspace list remains an independent state. Aggregate selection never overloads `nil` or invents a sentinel path.
 
@@ -57,11 +57,10 @@ Collection freshness is evaluated per workspace and never from an aggregate time
 
 Collector requests retain 185 daily labels; the presentation selects the common history needed for six calendar months.
 
-Short-history and first collections remain untimed, visible, and cancellable; already-complete reports retain the normal timeout. The collector checkpoints its atomic cache after churn collection and after each snapshot progress batch, so a cancelled extension resumes instead of restarting from zero.
+The collector checkpoints its atomic cache after churn collection and after each snapshot progress batch, so a cancelled extension resumes instead of restarting from zero.
 
 In All Workspaces mode:
 
-- Launch, hourly, and wake refresh at most one missing, shorter-than-185-day, or oldest stale workspace.
 - Manual refresh selects every tracked workspace and shows the active workspace plus `N of M` queue progress.
 - Workspaces run sequentially through the existing one-collector-at-a-time boundary.
 - Cancellation stops the active collector and skips the remaining queue.
@@ -128,7 +127,6 @@ Core tests must prove:
 - The rate aligns every contributor to one common through-date; pre-creation zeros remain valid calendar-day inactivity.
 - Individual and aggregate snapshots share the same metric semantics.
 - Chart aggregation preserves code, test, and documentation additions and removals as six independent series.
-- Launch, hourly, and wake refresh at most one missing, short, or stale report; manual refresh queues all with visible progress.
 - Aggregate refresh is sequential, continues after one failure, and cancels the remaining queue.
 - Collector arguments and the Python-to-Swift contract retain 185 daily labels for the six-month chart window.
 - Cache checkpoints survive collector cancellation after churn and snapshot progress batches.

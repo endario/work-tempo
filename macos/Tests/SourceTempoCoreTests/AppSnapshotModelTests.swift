@@ -27,6 +27,23 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertFalse(refreshing.hasMomentum)
     }
 
+    func testEmptyPortfolioUsesUnavailableMetricValues() throws {
+        let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [:]
+        ).get()
+
+        let snapshot = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(snapshot.dataState, .empty)
+        XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
+    }
+
     func testCachedSnapshotExposesMetricsAndMomentum() throws {
         let report = try report(
             currentChurn: 300,

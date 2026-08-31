@@ -173,7 +173,7 @@ open /Applications/SourceTempo.app
 
 Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Cumulative Churn and Monthly Churn share one six-series legend: code and test additions and removals are above the axis, while informational documentation additions and removals are below it.
 
-The app renders saved reports immediately. In All Workspaces mode, unattended launch, hourly, and wake refreshes update at most one missing, short, or stale report; a manual refresh queues every tracked workspace. Individual mode refreshes only the selected workspace. Collection is sequential, skips unattended work in Low Power Mode, uses two workers, and checkpoints the collector cache so an interrupted history extension can resume.
+The app renders saved reports immediately. Collection is sequential, skips unattended work in Low Power Mode, uses two workers, and checkpoints the collector cache so an interrupted history extension can resume.
 
 App state and saved reports live under:
 

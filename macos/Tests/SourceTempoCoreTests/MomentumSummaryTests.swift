@@ -34,19 +34,6 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.dailyChurn, 1)
     }
 
-    func testReportAdapterAndSyntheticInputShareOneMetricEngine() throws {
-        let report = try ReportDocument.decode(data: makeReportData(
-            churn: Array(repeating: 2, count: 30) + Array(repeating: 3, count: 30) + [99_999],
-            added: Array(repeating: 1, count: 61),
-            deleted: Array(repeating: 2, count: 61)
-        ))
-
-        XCTAssertEqual(
-            MomentumSummary(report: report),
-            MomentumSummary(input: MomentumInput(report: report))
-        )
-    }
-
     func testCompactMetricFormatting() {
         XCTAssertEqual(MetricFormatter.compact(0.33), "0.3")
         XCTAssertEqual(MetricFormatter.compact(2.0), "2")
