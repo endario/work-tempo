@@ -38,13 +38,13 @@ source-tempo
 The current directory is the default workspace. Analyze another checkout with:
 
 ```bash
-source-tempo --root ~/reborn
+source-tempo --root ~/projects/my-app
 ```
 
 Without installation, use:
 
 ```bash
-PYTHONPATH=src python3 -m source_tempo --root ~/reborn
+PYTHONPATH=src python3 -m source_tempo --root ~/projects/my-app
 ```
 
 ## Reports
@@ -53,18 +53,18 @@ The default report covers the latest 18 monthly periods and writes HTML under th
 
 ```bash
 # Monthly history with explicit outputs
-source-tempo --root ~/reborn \
+source-tempo --root ~/projects/my-app \
   --html /tmp/source-tempo.html \
   --json /tmp/source-tempo.json
 
 # Daily view for the latest 30 days
-source-tempo --root ~/reborn --period day --days 30
+source-tempo --root ~/projects/my-app --period day --days 30
 
 # Terminal and JSON only
-source-tempo --root ~/reborn --no-html --json /tmp/source-tempo.json
+source-tempo --root ~/projects/my-app --no-html --json /tmp/source-tempo.json
 
 # Optional three-month LOC forecast using the last six completed months
-source-tempo --root ~/reborn --forecast
+source-tempo --root ~/projects/my-app --forecast
 ```
 
 Period boundaries use the active system timezone, falling back to UTC. The resolved timezone is included in JSON and HTML report metadata.
@@ -76,10 +76,10 @@ SourceTempo always considers the parent Git repository. It also discovers usable
 Create a personal configuration:
 
 ```bash
-source-tempo --root ~/reborn --init-config
+source-tempo --root ~/projects/my-app --init-config
 ```
 
-This writes `~/reborn/.source-tempo.local.json`, which should remain untracked. For shared workspace policy, generate or maintain `~/reborn/.source-tempo.json` instead.
+This writes `~/projects/my-app/.source-tempo.local.json`, which should remain untracked. For shared workspace policy, generate or maintain `~/projects/my-app/.source-tempo.json` instead.
 
 Configuration layers are applied in this order:
 

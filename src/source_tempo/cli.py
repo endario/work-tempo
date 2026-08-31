@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
 from html import escape
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CACHE_SCHEMA_VERSION = 4
 CONFIG_SCHEMA_VERSION = 1
@@ -323,7 +324,7 @@ def default_report_title_for_root(root: Path) -> str:
     return root.name or REPORT_TITLE
 
 
-def effective_extra_repos(root: Path) -> list[dict[str, str]]:
+def effective_extra_repos() -> list[dict[str, str]]:
     return EXTRA_REPOS or []
 
 
@@ -468,7 +469,33 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
 
 
 def active_timezone() -> tzinfo:
-    return datetime.now().astimezone().tzinfo or timezone.utc
+    candidates: list[str] = []
+    env_timezone = os.environ.get("TZ", "").lstrip(":")
+    if env_timezone:
+        candidates.append(env_timezone)
+
+    localtime = Path("/etc/localtime")
+    try:
+        resolved_localtime = localtime.resolve(strict=True).as_posix()
+    except OSError:
+        resolved_localtime = ""
+    marker = "/zoneinfo/"
+    if marker in resolved_localtime:
+        candidates.append(resolved_localtime.split(marker, 1)[1])
+
+    try:
+        configured_timezone = Path("/etc/timezone").read_text(encoding="utf-8").strip()
+    except OSError:
+        configured_timezone = ""
+    if configured_timezone:
+        candidates.append(configured_timezone)
+
+    for candidate in candidates:
+        try:
+            return ZoneInfo(candidate)
+        except ZoneInfoNotFoundError:
+            continue
+    return timezone.utc
 
 
 def timezone_label(tz: tzinfo) -> str:
@@ -482,7 +509,8 @@ def timezone_label(tz: tzinfo) -> str:
 
 
 def timezone_signature(tz: tzinfo) -> str:
-    return timezone_label(tz).replace(" ", "_")
+    zone_key = getattr(tz, "key", None)
+    return str(zone_key or timezone_label(tz)).replace(" ", "_")
 
 
 def filter_signature(include_vendor: bool) -> str:
@@ -605,12 +633,11 @@ def snapshot_from_cache(data: object) -> Snapshot | None:
         if isinstance(lang, str) and isinstance(lines, int):
             clean_docs_by_language[lang] = lines
     clean_by_kind: dict[str, int] = {kind: 0 for kind in SOURCE_KINDS}
-    if isinstance(by_kind, dict):
-        for kind, lines in by_kind.items():
-            if kind in SOURCE_KINDS and isinstance(lines, int):
-                clean_by_kind[kind] = lines
-    else:
-        clean_by_kind["code"] = total
+    if not isinstance(by_kind, dict):
+        return None
+    for kind, lines in by_kind.items():
+        if kind in SOURCE_KINDS and isinstance(lines, int):
+            clean_by_kind[kind] = lines
     return Snapshot(
         total=total,
         by_language=clean_by_language,
@@ -737,7 +764,7 @@ def list_repos(
             skipped.append(sub_path)
             continue
         repos.append((sub_path, full))
-    for repo in effective_extra_repos(root):
+    for repo in effective_extra_repos():
         label = repo["label"]
         full = next((
             path for path in candidate_repo_paths(root, repo)
@@ -751,7 +778,7 @@ def list_repos(
 
 
 def partition_skipped_repos(root: Path, skipped_repos: list[str]) -> dict[str, list[str]]:
-    extra_labels = {repo["label"] for repo in effective_extra_repos(root)}
+    extra_labels = {repo["label"] for repo in effective_extra_repos()}
     declared_submodules = set(gitmodule_paths(root))
     non_product = [r for r in skipped_repos if r in EXCLUDE_SUBMODULES]
     unavailable_extra = [r for r in skipped_repos if r in extra_labels]
@@ -781,60 +808,30 @@ def partition_skipped_repos(root: Path, skipped_repos: list[str]) -> dict[str, l
 
 
 def find_commit_at(repo: Path, cutoff_iso: str) -> str | None:
-    return run(
+    result = subprocess.run(
         ["git", "log", "-1", "--format=%H", f"--before={cutoff_iso}", "HEAD"],
         cwd=repo,
-    ) or None
-
-
-def cloc_code_counts(workdir: Path) -> dict[str, int]:
-    """Run `cloc --by-file --json` on workdir, return {relative_path: code_lines}.
-
-    `code` excludes blank and comment lines (including KDoc, doxygen, TSDoc,
-    Python docstrings, license headers). Falls back to an empty dict if cloc
-    isn't installed or fails — callers should treat that as "no SLOC data,
-    use raw line count".
-    """
-    try:
-        out = subprocess.run(
-            ["cloc", "--by-file", "--json", "--quiet", str(workdir)],
-            capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"git log cutoff lookup failed for {repo}: "
+            f"{result.stderr.strip() or 'unknown error'}"
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return {}
-    if out.returncode != 0 or not out.stdout.strip():
-        return {}
-    try:
-        data = json.loads(out.stdout)
-    except json.JSONDecodeError:
-        return {}
-    result: dict[str, int] = {}
-    workdir_str = str(workdir).rstrip("/") + "/"
-    for key, value in data.items():
-        if key in ("header", "SUM") or not isinstance(value, dict):
-            continue
-        path_str = key
-        if path_str.startswith(workdir_str):
-            path_str = path_str[len(workdir_str):]
-        result[path_str.replace("\\", "/")] = int(value.get("code", 0))
-    return result
+    return result.stdout.strip() or None
 
 
-def count_snapshot(repo: Path, commit: str, include_vendor: bool = False,
-                   exclude_comments: bool = False) -> Snapshot:
-    """Extract `commit` from `repo` into a tmp dir and count lines by language.
-
-    When `exclude_comments` is True, defers to `cloc` for SLOC counts that
-    exclude blank and comment lines. Falls back to raw line count per-file
-    if cloc isn't available.
-    """
+def count_snapshot(repo: Path, commit: str, include_vendor: bool = False) -> Snapshot:
+    """Extract `commit` from `repo` into a temporary directory and count lines."""
     snap = Snapshot()
     archive = subprocess.run(
         ["git", "archive", "--format=tar", commit],
         cwd=repo, capture_output=True,
     )
     if archive.returncode != 0 or not archive.stdout:
-        return snap
+        error = archive.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git archive failed for {repo}: {error or 'empty archive'}")
 
     with tempfile.TemporaryDirectory(prefix="loc-snap-") as tmp:
         extract = subprocess.run(
@@ -842,9 +839,8 @@ def count_snapshot(repo: Path, commit: str, include_vendor: bool = False,
             input=archive.stdout, capture_output=True,
         )
         if extract.returncode != 0:
-            return snap
-
-        cloc_counts = cloc_code_counts(Path(tmp)) if exclude_comments else {}
+            error = extract.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"tar extraction failed for {repo}: {error or 'unknown error'}")
 
         excluded = EXCLUDE_DIRS if not include_vendor else EXCLUDE_DIRS - VENDOR_DIRS
         for dirpath, dirnames, filenames in os.walk(tmp):
@@ -865,14 +861,11 @@ def count_snapshot(repo: Path, commit: str, include_vendor: bool = False,
                 if doc_lang is not None and not should_count_documentation_path(rel, include_vendor=include_vendor):
                     if not (is_doc_only_repo(repo) and should_count_path(rel, include_vendor=include_vendor)):
                         continue
-                if exclude_comments and rel in cloc_counts:
-                    lines = cloc_counts[rel]
-                else:
-                    try:
-                        with open(fpath, "rb") as fh:
-                            lines = sum(1 for _ in fh)
-                    except OSError:
-                        continue
+                try:
+                    with open(fpath, "rb") as fh:
+                        lines = sum(1 for _ in fh)
+                except OSError:
+                    continue
                 if doc_lang is not None:
                     snap.docs_total += lines
                     snap.docs_by_language[doc_lang] = snap.docs_by_language.get(doc_lang, 0) + lines
@@ -911,7 +904,9 @@ def collect_churn_by_period(
         cwd=repo, capture_output=True, text=True, errors="replace",
     )
     if result.returncode != 0:
-        return {}
+        raise RuntimeError(
+            f"git log failed for {repo}: {result.stderr.strip() or 'unknown error'}"
+        )
 
     bucket_tz = report_tz or timezone.utc
     buckets: dict[str, dict[str, tuple[int, int]]] = {}
@@ -977,13 +972,6 @@ def _churn_buckets_from_cache(raw: object) -> dict[str, dict[str, tuple[int, int
     out: dict[str, dict[str, tuple[int, int]]] = {}
     for month, value in raw.items():
         if not isinstance(month, str):
-            continue
-        if (
-            isinstance(value, list)
-            and len(value) == 2
-            and all(isinstance(v, int) for v in value)
-        ):
-            out[month] = {"code": (value[0], value[1])}
             continue
         if not isinstance(value, dict):
             continue
@@ -2193,7 +2181,7 @@ def _render_html(
         .replace("__GENERATED_AT__", escape(generated_label))
         .replace("__COUNTING_NOTES__", notes)
     )
-    path.write_text(html, encoding="utf-8")
+    atomic_write_text(path, html)
 
 
 def write_html(path: Path, document: dict[str, object]) -> None:
@@ -2352,6 +2340,9 @@ def main() -> int:
     if period_count < 1:
         print("error: period count must be >= 1", file=sys.stderr)
         return 1
+    if args.workers < 1:
+        print("error: workers must be >= 1", file=sys.stderr)
+        return 1
     month_labels = period_labels(args.period, period_count, report_tz)
     period_header = "Days" if args.period == "day" else "Months"
 
@@ -2364,7 +2355,7 @@ def main() -> int:
     else:
         print("Config: built-in defaults")
     counted_labels = {label for label, _path in repos}
-    extra_labels = {repo["label"] for repo in effective_extra_repos(root)}
+    extra_labels = {repo["label"] for repo in effective_extra_repos()}
     extra_count = len(counted_labels & extra_labels)
     submodule_count = max(0, len(repos) - 1 - extra_count)
     repo_parts = ["parent", f"{submodule_count} submodules"]
@@ -2398,16 +2389,27 @@ def main() -> int:
     # ------------------------------------------------------------------ churn
     print("Collecting churn from git log ...")
     churn_all: dict[str, dict[str, dict[str, tuple[int, int]]]] = {}
-    churn_cache_counts = {"hit": 0, "incremental": 0, "miss": 0, "disabled": 0}
+    churn_cache_counts = {
+        "hit": 0,
+        "incremental": 0,
+        "miss": 0,
+        "disabled": 0,
+        "error": 0,
+    }
     for label, path in repos:
-        churn_all[label], status = collect_churn_cached(
-            label,
-            path,
-            args.include_vendor,
-            cache,
-            report_tz,
-            args.period,
-        )
+        try:
+            churn_all[label], status = collect_churn_cached(
+                label,
+                path,
+                args.include_vendor,
+                cache,
+                report_tz,
+                args.period,
+            )
+        except RuntimeError as exc:
+            churn_all[label] = {}
+            status = "error"
+            print(f"  warn: churn failed for {label}: {exc}", file=sys.stderr)
         churn_cache_counts[status] = churn_cache_counts.get(status, 0) + 1
     print(
         "  churn cache: "
@@ -2415,6 +2417,7 @@ def main() -> int:
         f"{churn_cache_counts.get('incremental', 0)} incremental, "
         f"{churn_cache_counts.get('miss', 0)} miss"
         + (f", {churn_cache_counts.get('disabled', 0)} disabled" if args.no_cache else "")
+        + (f", {churn_cache_counts['error']} error" if churn_cache_counts["error"] else "")
     )
 
     # ------------------------------------------------------------------- LOC
@@ -2427,7 +2430,11 @@ def main() -> int:
     for mi, period_label in enumerate(month_labels):
         cutoff = end_of_period_iso(period_label, args.period, report_tz)
         for ri, (label, path) in enumerate(repos):
-            commit = find_commit_at(path, cutoff)
+            try:
+                commit = find_commit_at(path, cutoff)
+            except RuntimeError as exc:
+                print(f"  warn: snapshot lookup failed for {label}: {exc}", file=sys.stderr)
+                continue
             if commit is None:
                 continue
             snapshot_commits[mi][ri] = commit

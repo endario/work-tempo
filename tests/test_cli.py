@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def load_script(name: str, rel_path: str, apply_repo_config: bool = True):
+def load_script(name: str, rel_path: str):
     path = REPO_ROOT / rel_path
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None
@@ -34,7 +34,7 @@ def load_script(name: str, rel_path: str, apply_repo_config: bool = True):
 
 
 def make_report_document(
-    loch,
+    tempo,
     labels,
     loc_series,
     doc_loc_series,
@@ -57,10 +57,10 @@ def make_report_document(
     now=None,
 ):
     generated_at = now or datetime.now(report_tz)
-    return loch.build_report_data(
-        loch.ReportInput(
+    return tempo.build_report_data(
+        tempo.ReportInput(
             root=REPO_ROOT,
-            report_title=loch.REPORT_TITLE,
+            report_title=tempo.REPORT_TITLE,
             generated_at=generated_at,
             report_tz=report_tz,
             period=period,
@@ -91,20 +91,19 @@ def make_report_document(
 
 class LocAnalysisScriptTest(unittest.TestCase):
     def test_generic_defaults_have_no_workspace_specific_scope(self) -> None:
-        loch = load_script(
-            "loch_generic_defaults_test",
+        tempo = load_script(
+            "tempo_generic_defaults_test",
             "src/source_tempo/cli.py",
-            apply_repo_config=False,
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(loch.EXCLUDE_SUBMODULES, set())
-            self.assertEqual(loch.effective_extra_repos(Path(tmp)), [])
-            self.assertEqual(loch.CONFIG_FILENAME, ".source-tempo.json")
-            self.assertEqual(loch.LOCAL_CONFIG_FILENAME, ".source-tempo.local.json")
+            self.assertEqual(tempo.EXCLUDE_SUBMODULES, set())
+            self.assertEqual(tempo.effective_extra_repos(), [])
+            self.assertEqual(tempo.CONFIG_FILENAME, ".source-tempo.json")
+            self.assertEqual(tempo.LOCAL_CONFIG_FILENAME, ".source-tempo.local.json")
 
     def test_workspace_artifacts_use_isolated_user_cache_paths(self) -> None:
-        loch = load_script("loch_artifact_paths_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_artifact_paths_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             cache_root = Path(tmp) / "cache"
             first = Path(tmp) / "first"
@@ -117,78 +116,82 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 {"SOURCE_TEMPO_CACHE_HOME": str(cache_root)},
                 clear=False,
             ):
-                first_dir = loch.workspace_artifact_dir(first)
-                second_dir = loch.workspace_artifact_dir(second)
+                first_dir = tempo.workspace_artifact_dir(first)
+                second_dir = tempo.workspace_artifact_dir(second)
 
                 self.assertEqual(first_dir.parent, cache_root.resolve())
-                self.assertEqual(loch.default_cache_path(first).name, "cache.json")
-                self.assertEqual(loch.default_html_path(first).name, "report.html")
+                self.assertEqual(tempo.default_cache_path(first).name, "cache.json")
+                self.assertEqual(tempo.default_html_path(first).name, "report.html")
             self.assertNotEqual(first_dir, second_dir)
             self.assertNotEqual(first_dir, first)
 
     def test_default_report_title_uses_workspace_directory_name(self) -> None:
-        loch = load_script(
-            "loch_generic_title_test",
+        tempo = load_script(
+            "tempo_generic_title_test",
             "src/source_tempo/cli.py",
-            apply_repo_config=False,
         )
 
         self.assertEqual(
-            loch.default_report_title_for_root(Path("/tmp/example-workspace")),
+            tempo.default_report_title_for_root(Path("/tmp/example-workspace")),
             "example-workspace",
         )
 
+    def test_active_timezone_uses_system_zone_name(self) -> None:
+        tempo = load_script("tempo_timezone_test", "src/source_tempo/cli.py")
+        with mock.patch.dict(os.environ, {"TZ": "Asia/Tokyo"}, clear=False):
+            active_timezone = tempo.active_timezone()
+            self.assertEqual(getattr(active_timezone, "key", None), "Asia/Tokyo")
+            self.assertEqual(tempo.timezone_signature(active_timezone), "Asia/Tokyo")
+
     def test_workspace_config_layers_tracked_then_local(self) -> None:
-        loch = load_script(
-            "loch_layered_config_test",
+        tempo = load_script(
+            "tempo_layered_config_test",
             "src/source_tempo/cli.py",
-            apply_repo_config=False,
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / loch.CONFIG_FILENAME).write_text(
+            (root / tempo.CONFIG_FILENAME).write_text(
                 json.dumps({"report_title": "Shared", "extra_repos": []}),
                 encoding="utf-8",
             )
-            (root / loch.LOCAL_CONFIG_FILENAME).write_text(
+            (root / tempo.LOCAL_CONFIG_FILENAME).write_text(
                 json.dumps({"report_title": "Personal"}),
                 encoding="utf-8",
             )
 
             self.assertEqual(
-                loch.load_workspace_config_layers(root),
+                tempo.load_workspace_config_layers(root),
                 {"report_title": "Personal", "extra_repos": []},
             )
 
     def test_explicit_config_replaces_default_local_layer(self) -> None:
-        loch = load_script(
-            "loch_explicit_config_test",
+        tempo = load_script(
+            "tempo_explicit_config_test",
             "src/source_tempo/cli.py",
-            apply_repo_config=False,
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             explicit = root / "personal.json"
-            (root / loch.CONFIG_FILENAME).write_text(
+            (root / tempo.CONFIG_FILENAME).write_text(
                 json.dumps({"report_title": "Shared"}),
                 encoding="utf-8",
             )
-            (root / loch.LOCAL_CONFIG_FILENAME).write_text(
+            (root / tempo.LOCAL_CONFIG_FILENAME).write_text(
                 json.dumps({"report_title": "Ignored"}),
                 encoding="utf-8",
             )
             explicit.write_text(json.dumps({"report_title": "Explicit"}), encoding="utf-8")
 
             self.assertEqual(
-                loch.load_workspace_config_layers(root, explicit),
+                tempo.load_workspace_config_layers(root, explicit),
                 {"report_title": "Explicit"},
             )
 
     def test_effective_extra_repos_uses_workspace_config(self) -> None:
-        loch = load_script("loch_effective_config_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_effective_config_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            loch.apply_workspace_config({
+            tempo.apply_workspace_config({
                 "extra_repos": [
                     {"label": "companion", "path": "../companion"},
                     {"label": "embedded", "path": "embedded"},
@@ -196,7 +199,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             })
 
             self.assertEqual(
-                loch.effective_extra_repos(root),
+                tempo.effective_extra_repos(),
                 [
                     {"label": "companion", "path": "../companion"},
                     {"label": "embedded", "path": "embedded"},
@@ -204,7 +207,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             )
 
     def test_list_repos_keeps_non_product_submodules_out_and_adds_extra_repo(self) -> None:
-        loch = load_script("loch_repos_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_repos_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             root = tmp_path / "workspace"
@@ -252,25 +255,25 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return str(cwd)
                 return ""
 
-            original_run = loch.run
-            original_extra_repos = loch.EXTRA_REPOS
-            original_excluded_submodules = loch.EXCLUDE_SUBMODULES
+            original_run = tempo.run
+            original_extra_repos = tempo.EXTRA_REPOS
+            original_excluded_submodules = tempo.EXCLUDE_SUBMODULES
             try:
-                loch.run = fake_run
-                loch.EXTRA_REPOS = [
+                tempo.run = fake_run
+                tempo.EXTRA_REPOS = [
                     {"label": "companion", "path": "../companion"},
                     {"label": "embedded", "path": "embedded"},
                 ]
-                loch.EXCLUDE_SUBMODULES = {
+                tempo.EXCLUDE_SUBMODULES = {
                     "modules/prototype",
                     "modules/demo",
                     "modules/status-site",
                 }
-                repos, skipped = loch.list_repos(root)
+                repos, skipped = tempo.list_repos(root)
             finally:
-                loch.run = original_run
-                loch.EXTRA_REPOS = original_extra_repos
-                loch.EXCLUDE_SUBMODULES = original_excluded_submodules
+                tempo.run = original_run
+                tempo.EXTRA_REPOS = original_extra_repos
+                tempo.EXCLUDE_SUBMODULES = original_excluded_submodules
 
             self.assertEqual(
                 [label for label, _path in repos],
@@ -280,8 +283,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertIn("modules/demo", skipped)
             self.assertIn("modules/status-site", skipped)
 
-    def test_list_repos_ignores_unmapped_gitlinks_that_break_submodule_status(self) -> None:
-        loch = load_script("loch_unmapped_gitlinks_test", "src/source_tempo/cli.py")
+    def test_list_repos_deduplicates_repeated_gitmodules_paths(self) -> None:
+        tempo = load_script("tempo_duplicate_gitmodules_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "workspace"
             bridge = root / "modules" / "core"
@@ -302,8 +305,6 @@ class LocAnalysisScriptTest(unittest.TestCase):
                             "submodule.bridge.path modules/core",
                         ]
                     )
-                if cmd == ["git", "submodule", "status"]:
-                    return None
                 if (
                     cmd == ["git", "rev-parse", "--show-toplevel"]
                     and cwd is not None
@@ -312,21 +313,21 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return str(cwd)
                 return ""
 
-            original_run = loch.run
-            original_extra_repos = loch.EXTRA_REPOS
+            original_run = tempo.run
+            original_extra_repos = tempo.EXTRA_REPOS
             try:
-                loch.run = fake_run
-                loch.EXTRA_REPOS = []
-                repos, skipped = loch.list_repos(root)
+                tempo.run = fake_run
+                tempo.EXTRA_REPOS = []
+                repos, skipped = tempo.list_repos(root)
             finally:
-                loch.run = original_run
-                loch.EXTRA_REPOS = original_extra_repos
+                tempo.run = original_run
+                tempo.EXTRA_REPOS = original_extra_repos
 
         self.assertEqual([label for label, _path in repos], ["(parent)", "modules/core"])
         self.assertEqual(skipped, [])
 
     def test_list_repos_skips_missing_gitmodules_path(self) -> None:
-        loch = load_script("loch_missing_gitmodules_path_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_missing_gitmodules_path_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "workspace"
             root.mkdir()
@@ -343,39 +344,39 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return "submodule.bridge.path modules/core"
                 return ""
 
-            original_run = loch.run
-            original_extra_repos = loch.EXTRA_REPOS
+            original_run = tempo.run
+            original_extra_repos = tempo.EXTRA_REPOS
             try:
-                loch.run = fake_run
-                loch.EXTRA_REPOS = []
-                repos, skipped = loch.list_repos(root)
+                tempo.run = fake_run
+                tempo.EXTRA_REPOS = []
+                repos, skipped = tempo.list_repos(root)
             finally:
-                loch.run = original_run
-                loch.EXTRA_REPOS = original_extra_repos
+                tempo.run = original_run
+                tempo.EXTRA_REPOS = original_extra_repos
 
         self.assertEqual([label for label, _path in repos], ["(parent)"])
         self.assertEqual(skipped, ["modules/core"])
 
     def test_extra_repo_must_be_repo_root_not_plain_subdirectory(self) -> None:
-        loch = load_script("loch_extra_repo_root_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_extra_repo_root_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             nested = root / "nested" / "companion"
             nested.mkdir(parents=True)
             subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
 
-            original_extra_repos = loch.EXTRA_REPOS
+            original_extra_repos = tempo.EXTRA_REPOS
             try:
-                loch.EXTRA_REPOS = [{"label": "companion", "path": "nested/companion"}]
-                repos, skipped = loch.list_repos(root)
+                tempo.EXTRA_REPOS = [{"label": "companion", "path": "nested/companion"}]
+                repos, skipped = tempo.list_repos(root)
             finally:
-                loch.EXTRA_REPOS = original_extra_repos
+                tempo.EXTRA_REPOS = original_extra_repos
 
         self.assertEqual([label for label, _path in repos], ["(parent)"])
         self.assertEqual(skipped, ["companion"])
 
     def test_partition_skipped_repos_separates_skip_reasons(self) -> None:
-        loch = load_script("loch_partition_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_partition_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "workspace"
             root.mkdir()
@@ -398,22 +399,22 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     )
                 return ""
 
-            original_run = loch.run
-            original_extra_repos = loch.EXTRA_REPOS
-            original_excluded_submodules = loch.EXCLUDE_SUBMODULES
+            original_run = tempo.run
+            original_extra_repos = tempo.EXTRA_REPOS
+            original_excluded_submodules = tempo.EXCLUDE_SUBMODULES
             try:
-                loch.run = fake_run
-                loch.EXTRA_REPOS = [{"label": "companion", "path": "../companion"}]
-                loch.EXCLUDE_SUBMODULES = {"modules/status-site"}
+                tempo.run = fake_run
+                tempo.EXTRA_REPOS = [{"label": "companion", "path": "../companion"}]
+                tempo.EXCLUDE_SUBMODULES = {"modules/status-site"}
 
-                partition = loch.partition_skipped_repos(
+                partition = tempo.partition_skipped_repos(
                     root,
                     ["_vendor/json-render", "modules/status-site", "modules/core", "companion"],
                 )
             finally:
-                loch.run = original_run
-                loch.EXTRA_REPOS = original_extra_repos
-                loch.EXCLUDE_SUBMODULES = original_excluded_submodules
+                tempo.run = original_run
+                tempo.EXTRA_REPOS = original_extra_repos
+                tempo.EXCLUDE_SUBMODULES = original_excluded_submodules
 
         self.assertEqual(partition["vendor_like"], ["_vendor/json-render"])
         self.assertEqual(partition["non_product"], ["modules/status-site"])
@@ -421,7 +422,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual(partition["unavailable_extra"], ["companion"])
 
     def test_extra_repo_config_overrides_default_repo_discovery(self) -> None:
-        loch = load_script("loch_config_roundtrip_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_config_roundtrip_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             root = tmp_path / "workspace"
@@ -442,29 +443,29 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return str(cwd)
                 return ""
 
-            original_run = loch.run
-            original_extra_repos = loch.EXTRA_REPOS
+            original_run = tempo.run
+            original_extra_repos = tempo.EXTRA_REPOS
             try:
-                loch.run = fake_run
+                tempo.run = fake_run
 
-                loch.apply_workspace_config({"extra_repos": []})
-                repos, skipped = loch.list_repos(root)
+                tempo.apply_workspace_config({"extra_repos": []})
+                repos, skipped = tempo.list_repos(root)
                 self.assertEqual([label for label, _path in repos], ["(parent)"])
                 self.assertEqual(skipped, [])
 
-                loch.apply_workspace_config(
+                tempo.apply_workspace_config(
                     {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]}
                 )
-                repos, skipped = loch.list_repos(root)
+                repos, skipped = tempo.list_repos(root)
                 self.assertEqual([label for label, _path in repos], ["(parent)", "custom-consult"])
                 self.assertEqual(skipped, [])
             finally:
-                loch.run = original_run
-                loch.EXTRA_REPOS = original_extra_repos
+                tempo.run = original_run
+                tempo.EXTRA_REPOS = original_extra_repos
 
     def test_report_document_is_raw_complete_and_instance_driven(self) -> None:
-        loch = load_script("loch_report_document_test", "src/source_tempo/cli.py")
-        report = loch.ReportInput(
+        tempo = load_script("tempo_report_document_test", "src/source_tempo/cli.py")
+        report = tempo.ReportInput(
             root=Path("/tmp/workspace"),
             report_title="Fixture LOC",
             generated_at=datetime(2026, 8, 15, 9, 30, tzinfo=timezone.utc),
@@ -494,9 +495,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
             include_non_product=False,
             include_forecast=False,
         )
-        loch.REPORT_TITLE = "Mutated global"
+        tempo.REPORT_TITLE = "Mutated global"
 
-        document = loch.build_report_data(report)
+        document = tempo.build_report_data(report)
 
         self.assertEqual(document["schemaVersion"], 1)
         self.assertEqual(document["workspace"]["title"], "Fixture LOC")
@@ -508,9 +509,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual(document["forecast"], [])
 
     def test_html_adapter_escapes_raw_document_labels(self) -> None:
-        loch = load_script("loch_html_escape_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_html_escape_test", "src/source_tempo/cli.py")
         document = make_report_document(
-            loch,
+            tempo,
             ["2026-08"],
             [30],
             [5],
@@ -532,7 +533,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
             html = out.read_text(encoding="utf-8")
 
         data_json = html.split("const DATA = ", 1)[1].split(";\n", 1)[0]
@@ -542,7 +543,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertNotIn('repo <& "', data_json)
 
     def test_write_json_replaces_the_report_atomically(self) -> None:
-        loch = load_script("loch_json_write_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_json_write_test", "src/source_tempo/cli.py")
         document = {"schemaVersion": 1, "workspace": {"title": "Fixture"}}
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "reports" / "source-tempo.json"
@@ -550,20 +551,20 @@ class LocAnalysisScriptTest(unittest.TestCase):
             output.write_text('{"stale": true}\n', encoding="utf-8")
             output.chmod(0o640)
 
-            loch.write_json(output, document)
+            tempo.write_json(output, document)
 
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), document)
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
             self.assertEqual(list(output.parent.iterdir()), [output])
 
     def test_write_json_uses_process_default_mode_for_new_file(self) -> None:
-        loch = load_script("loch_json_mode_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_json_mode_test", "src/source_tempo/cli.py")
         current_umask = os.umask(0)
         os.umask(current_umask)
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "source-tempo.json"
 
-            loch.write_json(output, {"schemaVersion": 1})
+            tempo.write_json(output, {"schemaVersion": 1})
 
             self.assertEqual(
                 stat.S_IMODE(output.stat().st_mode),
@@ -571,9 +572,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
             )
 
     def test_report_outputs_reject_non_finite_values(self) -> None:
-        loch = load_script("loch_strict_json_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_strict_json_test", "src/source_tempo/cli.py")
         document = make_report_document(
-            loch,
+            tempo,
             ["2026-08"],
             [10],
             [1],
@@ -602,26 +603,80 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
-                loch.write_json(Path(tmp) / "report.json", document)
+                tempo.write_json(Path(tmp) / "report.json", document)
             with self.assertRaises(ValueError):
-                loch.write_html(Path(tmp) / "report.html", document)
+                tempo.write_html(Path(tmp) / "report.html", document)
+
+    def test_git_failures_are_not_returned_as_empty_metrics(self) -> None:
+        tempo = load_script("tempo_git_failure_test", "src/source_tempo/cli.py")
+
+        archive_failure = subprocess.CompletedProcess(
+            args=["git", "archive"],
+            returncode=1,
+            stdout=b"",
+            stderr=b"missing object",
+        )
+        with mock.patch.object(tempo.subprocess, "run", return_value=archive_failure):
+            with self.assertRaisesRegex(RuntimeError, "missing object"):
+                tempo.count_snapshot(Path("/tmp/repo"), "deadbeef")
+
+        churn_failure = subprocess.CompletedProcess(
+            args=["git", "log"],
+            returncode=1,
+            stdout="",
+            stderr="repository unavailable",
+        )
+        with mock.patch.object(tempo.subprocess, "run", return_value=churn_failure):
+            with self.assertRaisesRegex(RuntimeError, "repository unavailable"):
+                tempo.collect_churn_by_period(Path("/tmp/repo"))
+
+        cache = tempo.empty_cache()
+        with (
+            mock.patch.object(tempo, "git_head", return_value="abc123"),
+            mock.patch.object(
+                tempo,
+                "collect_churn_by_period",
+                side_effect=RuntimeError("transient failure"),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "transient failure"):
+                tempo.collect_churn_cached(
+                    "repo",
+                    Path("/tmp/repo"),
+                    False,
+                    cache,
+                    timezone.utc,
+                    "month",
+                )
+        self.assertEqual(cache["churn_repos"], {})
+
+    def test_cli_rejects_non_positive_worker_count(self) -> None:
+        tempo = load_script("tempo_worker_validation_test", "src/source_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            argv = ["source-tempo", "--root", str(repo), "--workers", "0", "--no-html"]
+            stderr = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stderr", stderr):
+                self.assertEqual(tempo.main(), 1)
+            self.assertIn("workers must be >= 1", stderr.getvalue())
 
     def test_atomic_write_removes_temporary_file_when_flush_fails(self) -> None:
-        loch = load_script("loch_json_failure_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_json_failure_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "source-tempo.json"
 
-            with mock.patch.object(loch.os, "fsync", side_effect=OSError("disk full")):
+            with mock.patch.object(tempo.os, "fsync", side_effect=OSError("disk full")):
                 with self.assertRaises(OSError):
-                    loch.write_json(output, {"schemaVersion": 1})
+                    tempo.write_json(output, {"schemaVersion": 1})
 
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_html_generated_badge_preserves_named_timezone(self) -> None:
-        loch = load_script("loch_html_timezone_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_html_timezone_test", "src/source_tempo/cli.py")
         tokyo = ZoneInfo("Asia/Tokyo")
         document = make_report_document(
-            loch,
+            tempo,
             ["2026-08"],
             [30],
             [5],
@@ -644,7 +699,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "report.html"
-            loch.write_html(output, document)
+            tempo.write_html(output, document)
             html = output.read_text(encoding="utf-8")
 
         self.assertIn("Generated 2026-08-31 15:46 JST", html)
@@ -731,12 +786,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertIn(str(local_config), result.stdout)
 
     def test_html_reports_missing_extra_repo_without_calling_it_excluded_submodule(self) -> None:
-        loch = load_script("loch_html_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_html_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
 
             document = make_report_document(
-                loch,
+                tempo,
                 ["2026-07"],
                 [0],
                 [0],
@@ -761,7 +816,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 timezone.utc,
                 "month",
             )
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
 
@@ -779,8 +834,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
 
     def test_monthly_chart_timeline_interpolates_current_open_month(self) -> None:
-        loch = load_script("loch_timeline_test", "src/source_tempo/cli.py")
-        timeline = loch.chart_timeline_metadata(
+        tempo = load_script("tempo_timeline_test", "src/source_tempo/cli.py")
+        timeline = tempo.chart_timeline_metadata(
             ["2026-06", "2026-07", "2026-08"],
             "month",
             timezone.utc,
@@ -791,8 +846,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertAlmostEqual(timeline["currentProgress"], 4 / 31)
 
     def test_chart_timeline_leaves_closed_months_at_full_tick(self) -> None:
-        loch = load_script("loch_closed_timeline_test", "src/source_tempo/cli.py")
-        timeline = loch.chart_timeline_metadata(
+        tempo = load_script("tempo_closed_timeline_test", "src/source_tempo/cli.py")
+        timeline = tempo.chart_timeline_metadata(
             ["2026-05", "2026-06", "2026-07"],
             "month",
             timezone.utc,
@@ -803,8 +858,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual(timeline["currentProgress"], 1.0)
 
     def test_chart_timeline_keeps_last_day_visibly_open(self) -> None:
-        loch = load_script("loch_last_day_timeline_test", "src/source_tempo/cli.py")
-        timeline = loch.chart_timeline_metadata(
+        tempo = load_script("tempo_last_day_timeline_test", "src/source_tempo/cli.py")
+        timeline = tempo.chart_timeline_metadata(
             ["2026-06", "2026-07", "2026-08"],
             "month",
             timezone.utc,
@@ -815,12 +870,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertLess(timeline["currentProgress"], 1.0)
 
     def test_html_embeds_current_month_timeline_metadata(self) -> None:
-        loch = load_script("loch_timeline_html_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_timeline_html_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
 
             document = make_report_document(
-                loch,
+                tempo,
                 ["2026-06", "2026-07", "2026-08"],
                 [100, 120, 130],
                 [10, 12, 13],
@@ -842,7 +897,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 now=datetime(2026, 8, 4, 9, tzinfo=timezone.utc),
             )
             document["timeline"] = {"currentIndex": 2, "currentProgress": 0.25}
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
 
@@ -856,9 +911,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertIn("Remaining month not counted yet", html)
 
     def test_loc_forecast_projects_three_months(self) -> None:
-        loch = load_script("loch_forecast_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_forecast_test", "src/source_tempo/cli.py")
 
-        forecast = loch.loc_forecast(
+        forecast = tempo.loc_forecast(
             ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
             [100, 150, 210, 280, 300, 315],
             report_tz=timezone.utc,
@@ -872,9 +927,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([point["value"] for point in forecast], [358, 401, 444])
 
     def test_loc_forecast_uses_trailing_six_month_growth_rate(self) -> None:
-        loch = load_script("loch_trailing_six_forecast_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_trailing_six_forecast_test", "src/source_tempo/cli.py")
 
-        forecast = loch.loc_forecast(
+        forecast = tempo.loc_forecast(
             [
                 "2026-01",
                 "2026-02",
@@ -895,9 +950,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([point["value"] for point in forecast], [900, 960, 1020])
 
     def test_loc_forecast_clamps_deletion_month_to_flat_growth(self) -> None:
-        loch = load_script("loch_deletion_forecast_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_deletion_forecast_test", "src/source_tempo/cli.py")
 
-        forecast = loch.loc_forecast(
+        forecast = tempo.loc_forecast(
             ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
             [900_000, 930_000, 960_000, 990_000, 1_020_000, 1_050_000, 600_000],
             report_tz=timezone.utc,
@@ -907,9 +962,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([point["value"] for point in forecast], [600_000] * 3)
 
     def test_loc_forecast_ignores_current_partial_month_for_slope(self) -> None:
-        loch = load_script("loch_partial_month_forecast_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_partial_month_forecast_test", "src/source_tempo/cli.py")
 
-        forecast = loch.loc_forecast(
+        forecast = tempo.loc_forecast(
             ["2026-05", "2026-06", "2026-07"],
             [100, 150, 151],
             report_tz=timezone.utc,
@@ -919,10 +974,10 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([point["value"] for point in forecast], [201, 251, 301])
 
     def test_loc_forecast_requires_a_completed_delta(self) -> None:
-        loch = load_script("loch_short_forecast_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_short_forecast_test", "src/source_tempo/cli.py")
 
         self.assertEqual(
-            loch.loc_forecast(
+            tempo.loc_forecast(
                 ["2026-07"],
                 [100],
                 report_tz=timezone.utc,
@@ -931,7 +986,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             [],
         )
         self.assertEqual(
-            loch.loc_forecast(
+            tempo.loc_forecast(
                 ["2026-06", "2026-07"],
                 [100, 101],
                 report_tz=timezone.utc,
@@ -941,12 +996,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
 
     def test_monthly_html_does_not_advertise_loc_forecast_by_default(self) -> None:
-        loch = load_script("loch_forecast_default_html_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_forecast_default_html_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
 
             document = make_report_document(
-                loch,
+                tempo,
                 ["2026-01", "2026-02", "2026-03"],
                 [100, 120, 130],
                 [10, 12, 13],
@@ -966,7 +1021,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 timezone.utc,
                 "month",
             )
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
 
@@ -979,12 +1034,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertNotIn("LOC Snapshot forecast is informational only", html)
 
     def test_html_embeds_loc_snapshot_forecast_without_extending_history(self) -> None:
-        loch = load_script("loch_forecast_html_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_forecast_html_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
 
             document = make_report_document(
-                loch,
+                tempo,
                 ["2026-01", "2026-02", "2026-03"],
                 [100, 120, 130],
                 [10, 12, 13],
@@ -1005,7 +1060,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 "month",
                 True,
             )
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
 
@@ -1028,12 +1083,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertIn("No churn projected beyond this point", html)
 
     def test_daily_html_does_not_advertise_monthly_loc_forecast(self) -> None:
-        loch = load_script("loch_daily_forecast_html_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_daily_forecast_html_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "report.html"
 
             document = make_report_document(
-                loch,
+                tempo,
                 ["2026-07-29", "2026-07-30", "2026-07-31"],
                 [100, 120, 130],
                 [10, 12, 13],
@@ -1053,7 +1108,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 timezone.utc,
                 "day",
             )
-            loch.write_html(out, document)
+            tempo.write_html(out, document)
 
             html = out.read_text(encoding="utf-8")
 
@@ -1067,7 +1122,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertIn("docs shown as guide", html)
 
     def test_extra_repo_resolution_handles_parent_worktrees(self) -> None:
-        loch = load_script("loch_worktree_repos_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_worktree_repos_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             worktree_root = tmp_path / "workspace" / ".worktrees" / "branch"
@@ -1075,20 +1130,20 @@ class LocAnalysisScriptTest(unittest.TestCase):
             worktree_root.mkdir(parents=True)
             consult.mkdir()
 
-            original_main_checkout_root = loch.main_checkout_root
+            original_main_checkout_root = tempo.main_checkout_root
             try:
-                loch.main_checkout_root = lambda _root: tmp_path / "workspace"
-                candidates = loch.candidate_repo_paths(
+                tempo.main_checkout_root = lambda _root: tmp_path / "workspace"
+                candidates = tempo.candidate_repo_paths(
                     worktree_root,
                     {"label": "companion", "path": "../companion"},
                 )
             finally:
-                loch.main_checkout_root = original_main_checkout_root
+                tempo.main_checkout_root = original_main_checkout_root
 
             self.assertEqual(candidates[0], consult.resolve())
 
     def test_main_checkout_root_resolves_real_git_worktree(self) -> None:
-        loch = load_script("loch_real_worktree_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_real_worktree_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             main = Path(tmp) / "repo"
             worktree = Path(tmp) / "wt"
@@ -1106,22 +1161,22 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 capture_output=True,
             )
 
-            self.assertEqual(loch.main_checkout_root(worktree), main.resolve())
+            self.assertEqual(tempo.main_checkout_root(worktree), main.resolve())
 
     def test_doc_only_repo_names_participate_in_cache_signature(self) -> None:
-        loch = load_script("loch_doc_only_signature_test", "src/source_tempo/cli.py")
-        original = loch.DOC_ONLY_REPO_NAMES
+        tempo = load_script("tempo_doc_only_signature_test", "src/source_tempo/cli.py")
+        original = tempo.DOC_ONLY_REPO_NAMES
         try:
-            before = loch.filter_signature(include_vendor=False)
-            loch.DOC_ONLY_REPO_NAMES = {"documentation", "manuals"}
-            after = loch.filter_signature(include_vendor=False)
+            before = tempo.filter_signature(include_vendor=False)
+            tempo.DOC_ONLY_REPO_NAMES = {"documentation", "manuals"}
+            after = tempo.filter_signature(include_vendor=False)
         finally:
-            loch.DOC_ONLY_REPO_NAMES = original
+            tempo.DOC_ONLY_REPO_NAMES = original
 
         self.assertNotEqual(before, after)
 
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
-        loch = load_script("loch_doc_repo_artifacts_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")
         for repo_name in ("documentation",):
             with self.subTest(repo_name=repo_name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp) / repo_name
@@ -1144,9 +1199,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 subprocess.run(["git", "commit", "-m", "update docs artifacts"], cwd=repo, check=True, capture_output=True)
                 commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
-                snap = loch.count_snapshot(repo, commit)
-                churn = loch.collect_churn_by_period(repo, period="month")
-                source_only_churn = loch.collect_churn_by_period(repo, include_docs=False, period="month")
+                snap = tempo.count_snapshot(repo, commit)
+                churn = tempo.collect_churn_by_period(repo, period="month")
+                source_only_churn = tempo.collect_churn_by_period(repo, include_docs=False, period="month")
 
                 self.assertEqual(snap.total, 0)
                 self.assertEqual(snap.by_kind, {})
@@ -1160,7 +1215,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 self.assertEqual(source_only_churn, {})
 
     def test_cli_reports_hand_computed_history_and_invalidates_policy_cache(self) -> None:
-        loch = load_script("loch_end_to_end_fixture_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_end_to_end_fixture_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
             repo = temp_root / "fixture"
@@ -1214,6 +1269,47 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 capture_output=True,
             )
 
+            extra_repo = temp_root / "shared-sdk"
+            extra_repo.mkdir()
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=extra_repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=extra_repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=extra_repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "commit.gpgsign", "false"],
+                cwd=extra_repo,
+                check=True,
+            )
+            (extra_repo / "client.py").write_text("CLIENT_VERSION = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=extra_repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "add client"],
+                cwd=extra_repo,
+                env=first_env,
+                check=True,
+                capture_output=True,
+            )
+
+            extra_repo_config = [
+                {"label": "shared-sdk", "path": "../shared-sdk"},
+            ]
+            (repo / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({"extra_repos": extra_repo_config}),
+                encoding="utf-8",
+            )
+
             cache = temp_root / "cache.json"
 
             def run_report(name: str) -> dict:
@@ -1231,24 +1327,31 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     "--no-languages",
                 ]
                 with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
-                    self.assertEqual(loch.main(), 0)
+                    self.assertEqual(tempo.main(), 0)
                 self.assertTrue(html_path.exists())
                 return json.loads(json_path.read_text(encoding="utf-8"))
 
             cold = run_report("cold")
             warm = run_report("warm")
 
-            self.assertEqual(cold["series"]["loc"], [3, 4])
+            self.assertEqual(cold["series"]["loc"], [4, 5])
             self.assertEqual(cold["series"]["docLoc"], [1, 2])
-            self.assertEqual(cold["series"]["locByKind"], {"code": [1, 2], "test": [2, 2]})
-            self.assertEqual(cold["series"]["churn"], [3, 1])
+            self.assertEqual(cold["series"]["locByKind"], {"code": [2, 3], "test": [2, 2]})
+            self.assertEqual(cold["series"]["churn"], [4, 1])
             self.assertEqual(cold["series"]["docChurn"], [1, 1])
-            self.assertEqual(cold["series"]["added"], [3, 1])
+            self.assertEqual(cold["series"]["added"], [4, 1])
+            self.assertEqual(
+                [item["label"] for item in cold["latest"]["repositories"]],
+                ["(parent)", "shared-sdk"],
+            )
             self.assertEqual(cold["series"], warm["series"])
             self.assertEqual(cold["latest"], warm["latest"])
 
-            (repo / loch.LOCAL_CONFIG_FILENAME).write_text(
-                json.dumps({"exclude_dirs": ["src", "tests"]}),
+            (repo / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({
+                    "exclude_exts": [".py", ".md", ".mdx"],
+                    "extra_repos": extra_repo_config,
+                }),
                 encoding="utf-8",
             )
             policy_changed = run_report("policy-changed")
@@ -1256,7 +1359,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertEqual(policy_changed["series"]["churn"], [0, 0])
 
     def test_extra_repo_config_validation_rejects_bad_entries(self) -> None:
-        loch = load_script("loch_config_test", "src/source_tempo/cli.py")
+        tempo = load_script("tempo_config_test", "src/source_tempo/cli.py")
 
         for value in (
             {},
@@ -1265,7 +1368,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             [{"label": "companion"}],
         ):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                loch._extra_repo_list(value, "extra_repos")
+                tempo._extra_repo_list(value, "extra_repos")
 
 
 if __name__ == "__main__":
