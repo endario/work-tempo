@@ -91,7 +91,6 @@
 - [ ] Add failing tests for summed current totals, aligned 30-day values and chart history, one cohort, missing reports, overlap refusal, timezone refusal, code/test/docs partitions, current-open-day gating, and short-history behavior.
 - [ ] Run `swift test --package-path macos --filter PortfolioMomentumTests` and confirm failures.
 - [ ] Implement common-label watermark selection and index-based summation into one synthetic `MomentumInput` and `ChartTimeline`.
-- [ ] Refactor `DashboardSnapshot` to consume `DashboardData` for both individual and portfolio views; publish daily churn as `menuValue`.
 - [ ] Run portfolio, snapshot, and complete Swift suites.
 - [ ] Commit aggregation and snapshot presentation data.
 
