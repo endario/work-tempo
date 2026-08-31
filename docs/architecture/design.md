@@ -125,4 +125,4 @@ The local development path is an editable Python install. A later macOS app will
 - Warm-cache and cold-cache runs produce equivalent report metrics, including after a counting-policy change.
 - The extracted generic test suite passes on the supported Python version.
 - A representative multi-root fixture produces stable terminal, HTML, and JSON output.
-- The new repository is created under the `endario` GitHub account and remains private.
+- The new repository is created under the `endario-org` GitHub organization and remains private.
