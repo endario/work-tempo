@@ -21,7 +21,7 @@ func makeReportData(
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "yyyy-MM-dd"
-    let end = formatter.date(from: "2026-08-31")!
+    let end = formatter.date(from: generatedDate)!
     let labels = (0..<dayCount).map { offset in
         formatter.string(from: calendar.date(byAdding: .day, value: offset - dayCount + 1, to: end)!)
     }
