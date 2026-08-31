@@ -73,6 +73,8 @@ macos/
       CollectorClient.swift
       RefreshCoordinator.swift
       WorkspaceStore.swift
+      WorkspaceController.swift
+      DashboardSnapshot.swift
     SourceTempoMenuBar/
       SourceTempoApp.swift
       AppModel.swift
@@ -99,7 +101,7 @@ The app intentionally provides no cross-workspace total in the MVP. The collecto
 
 ## Collector Boundary
 
-For each enabled root the app invokes:
+For the selected root the app invokes:
 
 ```text
 source-tempo --root <root> --period day --days 61 --workers 2 --no-html --json <report-path>
