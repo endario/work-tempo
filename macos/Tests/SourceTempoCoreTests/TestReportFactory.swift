@@ -10,7 +10,10 @@ func makeReportData(
     docs: [Int]? = nil,
     churn: [Int]? = nil,
     added: [Int]? = nil,
-    deleted: [Int]? = nil
+    deleted: [Int]? = nil,
+    repositoryPaths: [String] = ["/tmp/fixture"],
+    timezone: String = "+08 (+08:00)",
+    languages: [String: [Int]]? = nil
 ) throws -> Data {
     let calendar = Calendar(identifier: .gregorian)
     let formatter = DateFormatter()
@@ -41,10 +44,24 @@ func makeReportData(
         "workspace": [
             "root": "/tmp/fixture",
             "title": "Fixture",
-            "timezone": "+08 (+08:00)",
+            "timezone": timezone,
             "timezoneAbbreviation": "+08",
         ],
+        "scope": [
+            "includeVendor": false,
+            "includeNonProduct": false,
+            "repositories": repositoryPaths.enumerated().map { index, path in
+                ["label": "repo-\(index)", "path": path, "commit": "commit-\(index)"]
+            },
+            "skipped": [
+                "vendor_like": [],
+                "non_product": [],
+                "unavailable_submodule": [],
+                "unavailable_extra": [],
+            ],
+        ],
         "period": ["kind": "day", "labels": labels],
+        "timeline": ["currentIndex": dayCount - 1, "currentProgress": 0.5],
         "series": [
             "loc": locValues,
             "docLoc": docValues,
@@ -54,6 +71,11 @@ func makeReportData(
             "deleted": deletedValues,
             "locByKind": ["code": codeValues, "test": testValues],
             "churnByKind": ["code": churnValues, "test": values(nil, default: 0)],
+            "addedByKind": ["code": addedValues, "test": values(nil, default: 0)],
+            "deletedByKind": ["code": deletedValues, "test": values(nil, default: 0)],
+            "language": (languages ?? ["Swift": codeValues, "Test": testValues]).map {
+                ["language": $0.key, "values": $0.value]
+            },
         ],
     ]
     return try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])

@@ -594,6 +594,19 @@ def save_cache(path: Path | None, cache: dict) -> None:
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
 
 
+def checkpoint_cache(
+    path: Path | None,
+    cache: dict | None,
+    completed: int,
+    total: int,
+    batch_size: int = 20,
+) -> None:
+    if cache is None or completed <= 0:
+        return
+    if completed % batch_size == 0 or completed == total:
+        save_cache(path, cache)
+
+
 def snapshot_cache_key(label: str, commit: str, include_vendor: bool) -> str:
     return f"{filter_signature(include_vendor)}|{label}|{commit}"
 
@@ -2419,6 +2432,7 @@ def main() -> int:
         + (f", {churn_cache_counts.get('disabled', 0)} disabled" if args.no_cache else "")
         + (f", {churn_cache_counts['error']} error" if churn_cache_counts["error"] else "")
     )
+    save_cache(cache_path, cache)
 
     # ------------------------------------------------------------------- LOC
     print("Computing LOC snapshots (parallel) ...")
@@ -2465,6 +2479,7 @@ def main() -> int:
             done_count += 1
             if done_count % 20 == 0 or done_count == len(tasks):
                 print(f"  {done_count}/{len(tasks)}", flush=True)
+                checkpoint_cache(cache_path, cache, done_count, len(tasks))
     elif tasks:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
@@ -2487,6 +2502,7 @@ def main() -> int:
                 done_count += 1
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
+                    checkpoint_cache(cache_path, cache, done_count, len(tasks))
 
     # ------------------------------------------------------- aggregation
     period_column = "Day" if args.period == "day" else "Month"

@@ -11,6 +11,39 @@ final class ReportDocumentTests: XCTestCase {
         XCTAssertEqual(report.series.loc.last, 220)
         XCTAssertEqual(report.series.locByKind.code.last, 140)
         XCTAssertEqual(report.series.locByKind.test.last, 80)
+        XCTAssertEqual(report.scope.repositories.map(\.path), ["/tmp/fixture"])
+        XCTAssertEqual(report.timeline.currentProgress, 0.5)
+        XCTAssertEqual(report.series.addedByKind.code.count, 61)
+        XCTAssertEqual(report.series.deletedByKind.test.count, 61)
+        XCTAssertEqual(Set(report.series.language.map(\.language)), ["Swift", "Test"])
+    }
+
+    func testRejectsMisalignedDetailedSeries() throws {
+        let names = ["addedByKind.code", "deletedByKind.test", "language.Swift"]
+        for name in names {
+            var object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any]
+            )
+            var series = try XCTUnwrap(object["series"] as? [String: Any])
+            if name == "language.Swift" {
+                var languages = try XCTUnwrap(series["language"] as? [[String: Any]])
+                let index = try XCTUnwrap(languages.firstIndex { $0["language"] as? String == "Swift" })
+                languages[index]["values"] = [1]
+                series["language"] = languages
+            } else {
+                let parts = name.split(separator: ".").map(String.init)
+                var kind = try XCTUnwrap(series[parts[0]] as? [String: Any])
+                kind[parts[1]] = [1]
+                series[parts[0]] = kind
+            }
+            object["series"] = series
+
+            XCTAssertThrowsError(try ReportDocument.decode(
+                data: JSONSerialization.data(withJSONObject: object)
+            )) { error in
+                XCTAssertEqual(error as? ReportError, .misalignedSeries(name))
+            }
+        }
     }
 
     func testRejectsUnsupportedSchemaVersion() throws {

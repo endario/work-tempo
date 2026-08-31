@@ -24,8 +24,10 @@ public struct ReportDocument: Decodable, Sendable {
     public let schemaVersion: Int
     public let generatedAt: String
     public let workspace: WorkspaceReport
+    public let scope: ScopeReport
     public let period: PeriodReport
     public let series: MetricSeries
+    public let timeline: TimelineReport
 
     public var generatedDate: String {
         String(generatedAt.prefix(10))
@@ -71,11 +73,26 @@ public struct ReportDocument: Decodable, Sendable {
             ("locByKind.test", series.locByKind.test.count),
             ("churnByKind.code", series.churnByKind.code.count),
             ("churnByKind.test", series.churnByKind.test.count),
+            ("addedByKind.code", series.addedByKind.code.count),
+            ("addedByKind.test", series.addedByKind.test.count),
+            ("deletedByKind.code", series.deletedByKind.code.count),
+            ("deletedByKind.test", series.deletedByKind.test.count),
         ]
-        if let mismatch = aligned.first(where: { $0.1 != count }) {
+        let languageAligned = series.language.map { ("language.\($0.language)", $0.values.count) }
+        if let mismatch = (aligned + languageAligned).first(where: { $0.1 != count }) {
             throw ReportError.misalignedSeries(mismatch.0)
         }
     }
+}
+
+public struct ScopeReport: Decodable, Sendable {
+    public let repositories: [RepositoryReport]
+}
+
+public struct RepositoryReport: Decodable, Sendable {
+    public let label: String
+    public let path: String
+    public let commit: String?
 }
 
 public struct WorkspaceReport: Decodable, Sendable {
@@ -99,9 +116,22 @@ public struct MetricSeries: Decodable, Sendable {
     public let deleted: [Int]
     public let locByKind: KindSeries
     public let churnByKind: KindSeries
+    public let addedByKind: KindSeries
+    public let deletedByKind: KindSeries
+    public let language: [LanguageSeries]
 }
 
 public struct KindSeries: Decodable, Sendable {
     public let code: [Int]
     public let test: [Int]
+}
+
+public struct LanguageSeries: Decodable, Sendable {
+    public let language: String
+    public let values: [Int]
+}
+
+public struct TimelineReport: Decodable, Sendable {
+    public let currentIndex: Int?
+    public let currentProgress: Double
 }
