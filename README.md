@@ -1,6 +1,6 @@
-# SourceTempo
+# Source Tempo
 
-SourceTempo tracks source-code momentum across a Git workspace and its related repositories. It produces terminal summaries, a self-contained HTML report, and optional schema-versioned JSON for other local tools.
+Source Tempo tracks source-code momentum across a Git workspace and its related repositories. It produces terminal summaries, a self-contained HTML report, and optional schema-versioned JSON for other local tools.
 
 It measures:
 
@@ -9,16 +9,16 @@ It measures:
 - Language composition and per-repository contribution.
 - Documentation LOC and churn as separate informational metrics.
 
-The optional native macOS menu-bar app keeps the selected workspace's source LOC and recent 30-day pace visible without opening a terminal.
+The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing 30 closed days. An individual workspace remains selectable from the header.
 
-Repository comparison and component classification are outside SourceTempo's scope.
+Repository comparison and component classification are outside Source Tempo's scope.
 
 ## Requirements
 
 - Python 3.10 or newer.
 - Git 2.30 or newer.
 
-SourceTempo has no Python runtime dependencies outside the standard library.
+Source Tempo has no Python runtime dependencies outside the standard library.
 
 ## Install
 
@@ -73,7 +73,7 @@ Period boundaries use the active system timezone, falling back to UTC. The resol
 
 ## Workspace Scope
 
-SourceTempo always considers the parent Git repository. It also discovers usable initialized submodules declared in `.gitmodules` and can aggregate additional repositories configured outside the workspace.
+Source Tempo always considers the parent Git repository. It also discovers usable initialized submodules declared in `.gitmodules` and can aggregate additional repositories configured outside the workspace.
 
 Create a personal configuration:
 
@@ -171,7 +171,9 @@ scripts/build-macos-app.sh --install
 open /Applications/SourceTempo.app
 ```
 
-Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The app renders its last successful report immediately, refreshes only the selected workspace once per hour and after wake, and skips unattended collection in Low Power Mode. A cold first collection is visible and has no timeout because it may take several minutes; refreshes use two workers and stop after two minutes.
+Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Cumulative Churn and Monthly Churn share one six-series legend: code and test additions and removals are above the axis, while informational documentation additions and removals are below it.
+
+The app renders saved reports immediately. Collection is sequential, skips unattended work in Low Power Mode, uses two workers, and checkpoints the collector cache so an interrupted history extension can resume.
 
 App state and saved reports live under:
 

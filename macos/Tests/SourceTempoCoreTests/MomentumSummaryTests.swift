@@ -14,12 +14,12 @@ final class MomentumSummaryTests: XCTestCase {
         let summary = MomentumSummary(report: report)
 
         XCTAssertEqual(summary.currentChurn, 300)
-        XCTAssertEqual(summary.previousChurn, 150)
+        XCTAssertEqual(summary.dailyChurn, 10, accuracy: 0.000_001)
         XCTAssertEqual(summary.netGrowth, 90)
-        guard case let .ready(share) = summary.pace else {
-            return XCTFail("Expected a ready pace")
-        }
-        XCTAssertEqual(share, 2.0 / 3.0, accuracy: 0.000_001)
+        XCTAssertEqual(summary.recentChurn, Array(repeating: 10, count: 30))
+        XCTAssertEqual(summary.recentNetGrowth.count, 30)
+        XCTAssertEqual(summary.recentNetGrowth.first, 3)
+        XCTAssertEqual(summary.recentNetGrowth.last, 90)
     }
 
     func testUsesReportGeneratedDateInsteadOfCurrentDate() throws {
@@ -31,43 +31,12 @@ final class MomentumSummaryTests: XCTestCase {
         let summary = MomentumSummary(report: report)
 
         XCTAssertEqual(summary.currentChurn, 30)
-        XCTAssertEqual(summary.previousChurn, 30)
-    }
-
-    func testReportsInsufficientHistoryForShortOrYoungReports() throws {
-        let short = try ReportDocument.decode(data: makeReportData(dayCount: 30))
-        XCTAssertEqual(MomentumSummary(report: short).pace, .insufficientHistory)
-
-        var youngLoc = Array(repeating: 0, count: 31)
-        youngLoc.append(contentsOf: Array(repeating: 100, count: 30))
-        let young = try ReportDocument.decode(data: makeReportData(loc: youngLoc))
-        XCTAssertEqual(MomentumSummary(report: young).pace, .insufficientHistory)
-    }
-
-    func testDistinguishesNewAndNoActivity() throws {
-        let newActivity = try ReportDocument.decode(data: makeReportData(
-            churn: Array(repeating: 0, count: 30) + Array(repeating: 1, count: 30) + [0]
-        ))
-        XCTAssertEqual(MomentumSummary(report: newActivity).pace, .newActivity)
-
-        let noActivity = try ReportDocument.decode(data: makeReportData())
-        XCTAssertEqual(MomentumSummary(report: noActivity).pace, .noRecentActivity)
-    }
-
-    func testTrendDropsLeadingZeroSourceDays() throws {
-        let loc = Array(repeating: 0, count: 5) + Array(repeating: 220, count: 56)
-        let code = Array(repeating: 0, count: 5) + Array(repeating: 140, count: 56)
-        let test = Array(repeating: 0, count: 5) + Array(repeating: 80, count: 56)
-        let report = try ReportDocument.decode(data: makeReportData(loc: loc, code: code, test: test))
-
-        let summary = MomentumSummary(report: report)
-
-        XCTAssertEqual(summary.trend.count, 56)
-        XCTAssertEqual(summary.trend.first?.code, 140)
-        XCTAssertEqual(summary.trend.first?.test, 80)
+        XCTAssertEqual(summary.dailyChurn, 1)
     }
 
     func testCompactMetricFormatting() {
+        XCTAssertEqual(MetricFormatter.compact(0.33), "0.3")
+        XCTAssertEqual(MetricFormatter.compact(2.0), "2")
         XCTAssertEqual(MetricFormatter.compact(999), "999")
         XCTAssertEqual(MetricFormatter.compact(1_200), "1.2K")
         XCTAssertEqual(MetricFormatter.compact(1_180_141), "1.18M")

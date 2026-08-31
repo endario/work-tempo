@@ -11,6 +11,7 @@ final class WorkspaceStoreTests: XCTestCase {
         let workspace = try Workspace(root: temporary.appending(path: "projects/../projects/reborn"))
 
         XCTAssertEqual(workspace.root.path, root.standardizedFileURL.resolvingSymlinksInPath().path)
+        XCTAssertTrue(workspace.root.hasDirectoryPath)
         XCTAssertEqual(workspace.displayName, "reborn")
     }
 
@@ -20,7 +21,11 @@ final class WorkspaceStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let workspace = try Workspace(root: root)
         let store = WorkspaceStore(baseDirectory: base.appending(path: "state"))
-        let state = WorkspaceState(roots: [workspace.root.path], selectedRoot: workspace.root.path)
+        let state = WorkspaceState(
+            roots: [workspace.root.path],
+            selectedRoot: workspace.root.path,
+            selectedScope: workspace.root.path
+        )
 
         try store.save(state)
         let loaded = try store.load()
@@ -34,8 +39,8 @@ final class WorkspaceStoreTests: XCTestCase {
     func testSaveReplacesExistingStateWithoutLeavingTemporaryFiles() throws {
         let base = try makeTemporaryDirectory()
         let store = WorkspaceStore(baseDirectory: base)
-        try store.save(WorkspaceState(roots: ["/first"], selectedRoot: "/first"))
-        let replacement = WorkspaceState(roots: ["/second"], selectedRoot: "/second")
+        try store.save(WorkspaceState(roots: ["/first"], selectedRoot: "/first", selectedScope: "/first"))
+        let replacement = WorkspaceState(roots: ["/second"], selectedRoot: nil, selectedScope: "all")
 
         try store.save(replacement)
 

@@ -3,21 +3,13 @@ import Combine
 import Foundation
 import SourceTempoCore
 
-struct WorkspaceRowModel: Identifiable, Equatable {
-    let workspace: Workspace
-    let sourceValue: String
-    let churnValue: String
-    let hasError: Bool
-
-    var id: String { workspace.root.path }
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var workspaces: [Workspace] = []
+    @Published private(set) var scope: DisplayScope = .all
     @Published private(set) var selectedWorkspace: Workspace?
     @Published private(set) var snapshot: DashboardSnapshot
-    @Published private(set) var workspaceRows: [WorkspaceRowModel] = []
+    @Published private(set) var refreshProgress: String?
 
     private let store: WorkspaceStore
     private let controller: WorkspaceController
@@ -46,9 +38,19 @@ final class AppModel: ObservableObject {
         Task {
             await cancelActiveRefresh()
             do {
-                let state = try await controller.select(workspace)
-                apply(state)
-                await coordinator.select(workspace)
+                apply(try await controller.select(workspace))
+                requestRefresh(.launch)
+            } catch {
+                applyError(error.localizedDescription)
+            }
+        }
+    }
+
+    func selectAll() {
+        Task {
+            await cancelActiveRefresh()
+            do {
+                apply(try await controller.selectAll())
                 requestRefresh(.launch)
             } catch {
                 applyError(error.localizedDescription)
@@ -72,9 +74,9 @@ final class AppModel: ObservableObject {
             do {
                 let state = try await controller.add(root: url)
                 apply(state)
-                guard let workspace = state.selectedWorkspace else { return }
-                await coordinator.select(workspace)
-                requestRefresh(.manual)
+                if let workspace = state.workspaces.last {
+                    requestRefresh(.manual, scopeOverride: .workspace(workspace))
+                }
             } catch {
                 applyError(error.localizedDescription)
             }
@@ -94,12 +96,7 @@ final class AppModel: ObservableObject {
         Task {
             await cancelActiveRefresh()
             do {
-                let state = try await controller.remove(workspace)
-                apply(state)
-                if let selected = state.selectedWorkspace {
-                    await coordinator.select(selected)
-                    requestRefresh(.launch)
-                }
+                apply(try await controller.remove(workspace))
             } catch {
                 applyError(error.localizedDescription)
             }
@@ -110,12 +107,8 @@ final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         do {
-            let state = try await controller.load()
-            apply(state)
-            if let workspace = state.selectedWorkspace {
-                await coordinator.select(workspace)
-                requestRefresh(.launch)
-            }
+            apply(try await controller.load())
+            requestRefresh(.launch)
         } catch {
             applyError(error.localizedDescription)
         }
@@ -134,16 +127,32 @@ final class AppModel: ObservableObject {
             }
     }
 
-    private func requestRefresh(_ trigger: RefreshTrigger) {
-        guard selectedWorkspace != nil, refreshTask == nil else { return }
-        let generatedAt = snapshot.reportGeneratedAt
+    private func requestRefresh(_ trigger: RefreshTrigger, scopeOverride: DisplayScope? = nil) {
+        guard !workspaces.isEmpty, refreshTask == nil else { return }
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
         refreshTask = Task { [weak self] in
             guard let self else { return }
-            guard let plan = await coordinator.request(
+            let state = await controller.state()
+            let targets = state.workspaces.map { workspace in
+                let report = state.report(for: workspace)
+                let lastAttemptFailed: Bool
+                if case .failed = state.refreshState(for: workspace) {
+                    lastAttemptFailed = true
+                } else {
+                    lastAttemptFailed = false
+                }
+                return RefreshTarget(
+                    workspace: workspace,
+                    generatedAt: report.flatMap { Self.parseTimestamp($0.generatedAt) },
+                    dayCount: report?.period.labels.count ?? 0,
+                    lastAttemptFailed: lastAttemptFailed
+                )
+            }
+            guard let plans = await coordinator.request(
                 trigger: trigger,
-                reportGeneratedAt: generatedAt,
+                scope: scopeOverride ?? state.scope,
+                targets: targets,
                 now: Date(),
                 lowPower: lowPower
             ) else {
@@ -151,28 +160,34 @@ final class AppModel: ObservableObject {
                 return
             }
 
-            let ticket = await controller.beginRefresh(plan.workspace)
-            apply(await controller.state())
-            do {
-                let executable = try resolver.resolve()
-                let client = CollectorClient(executable: executable)
-                let report = try await client.collect(CollectorRequest(
-                    workspace: plan.workspace,
-                    reportURL: store.reportURL(for: plan.workspace),
-                    timeout: plan.timeout
-                ))
-                apply(await controller.succeedRefresh(ticket, workspace: plan.workspace, report: report))
-            } catch CollectorError.cancelled {
-                apply(await controller.cancelRefresh(ticket, workspace: plan.workspace))
-            } catch is CancellationError {
-                apply(await controller.cancelRefresh(ticket, workspace: plan.workspace))
-            } catch {
-                apply(await controller.failRefresh(
-                    ticket,
-                    workspace: plan.workspace,
-                    message: error.localizedDescription
-                ))
+            for (index, plan) in plans.enumerated() {
+                guard !Task.isCancelled else { break }
+                refreshProgress = "\(plan.workspace.displayName) · \(index + 1) of \(plans.count)"
+                let ticket = await controller.beginRefresh(plan.workspace)
+                apply(await controller.state())
+                do {
+                    let executable = try resolver.resolve()
+                    let report = try await CollectorClient(executable: executable).collect(CollectorRequest(
+                        workspace: plan.workspace,
+                        reportURL: store.reportURL(for: plan.workspace),
+                        timeout: plan.timeout
+                    ))
+                    apply(await controller.succeedRefresh(ticket, workspace: plan.workspace, report: report))
+                } catch CollectorError.cancelled {
+                    apply(await controller.cancelRefresh(ticket, workspace: plan.workspace))
+                    break
+                } catch is CancellationError {
+                    apply(await controller.cancelRefresh(ticket, workspace: plan.workspace))
+                    break
+                } catch {
+                    apply(await controller.failRefresh(
+                        ticket,
+                        workspace: plan.workspace,
+                        message: error.localizedDescription
+                    ))
+                }
             }
+            refreshProgress = nil
             await coordinator.finish()
             refreshTask = nil
         }
@@ -186,30 +201,50 @@ final class AppModel: ObservableObject {
 
     private func apply(_ state: WorkspaceControllerState) {
         workspaces = state.workspaces
+        scope = state.scope
         selectedWorkspace = state.selectedWorkspace
         selectedReport = state.selectedReport
-        workspaceRows = state.workspaces.map { workspace in
-            let report = state.report(for: workspace)
-            let summary = report.map(MomentumSummary.init)
-            let hasError: Bool
-            if case .failed = state.refreshState(for: workspace) {
-                hasError = true
-            } else {
-                hasError = false
+        switch state.scope {
+        case .all:
+            let refreshState = aggregateRefreshState(state)
+            switch PortfolioMomentum.build(
+                workspaces: state.workspaces,
+                reports: state.reportsByWorkspace
+            ) {
+            case let .success(portfolio):
+                snapshot = DashboardSnapshot(
+                    portfolio: portfolio,
+                    refreshState: refreshState,
+                    now: Date()
+                )
+            case let .failure(error):
+                snapshot = DashboardSnapshot(
+                    workspace: nil,
+                    report: nil,
+                    refreshState: .failed(error.localizedDescription),
+                    now: Date()
+                )
             }
-            return WorkspaceRowModel(
+        case let .workspace(workspace):
+            snapshot = DashboardSnapshot(
                 workspace: workspace,
-                sourceValue: summary.map { MetricFormatter.compact($0.sourceLOC) } ?? "--",
-                churnValue: summary.map { MetricFormatter.compact($0.currentChurn) } ?? "--",
-                hasError: hasError
+                report: state.report(for: workspace),
+                refreshState: state.refreshState(for: workspace),
+                now: Date()
             )
         }
-        snapshot = DashboardSnapshot(
-            workspace: state.selectedWorkspace,
-            report: selectedReport,
-            refreshState: state.selectedWorkspace.map(state.refreshState(for:)) ?? .idle,
-            now: Date()
-        )
+    }
+
+    private func aggregateRefreshState(_ state: WorkspaceControllerState) -> SnapshotRefreshState {
+        let states = state.workspaces.map(state.refreshState(for:))
+        if states.contains(.refreshing) { return .refreshing }
+        if let failure = states.first(where: {
+            if case .failed = $0 { return true }
+            return false
+        }), case let .failed(message) = failure {
+            return .failed(message)
+        }
+        return .idle
     }
 
     private func applyError(_ message: String) {
@@ -219,5 +254,11 @@ final class AppModel: ObservableObject {
             refreshState: .failed(message),
             now: Date()
         )
+    }
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }

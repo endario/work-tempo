@@ -382,6 +382,8 @@ class ReportInput:
     doc_loc_series: list[int]
     churn_series: list[int]
     doc_churn_series: list[int]
+    doc_added_series: list[int]
+    doc_deleted_series: list[int]
     added_series: list[int]
     deleted_series: list[int]
     loc_kind_series: dict[str, list[int]]
@@ -588,8 +590,8 @@ def atomic_write_text(path: Path, content: str) -> None:
             temp_path.unlink(missing_ok=True)
 
 
-def save_cache(path: Path | None, cache: dict) -> None:
-    if path is None:
+def save_cache(path: Path | None, cache: dict | None) -> None:
+    if path is None or cache is None:
         return
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
 
@@ -1133,13 +1135,30 @@ def chart_timeline_metadata(
     now: datetime | None = None,
 ) -> dict[str, int | float | None]:
     """Describe where the latest open monthly bucket should render."""
-    if period != "month" or len(labels) < 2:
+    if len(labels) < 2:
         return {
             "currentIndex": None,
             "currentProgress": 1.0,
         }
 
     local_now = (now or datetime.now(report_tz)).astimezone(report_tz)
+    if period == "day":
+        current_label = local_now.strftime("%Y-%m-%d")
+        if labels[-1] != current_label:
+            return {"currentIndex": None, "currentProgress": 1.0}
+        elapsed = (
+            local_now.hour * 3600
+            + local_now.minute * 60
+            + local_now.second
+            + local_now.microsecond / 1_000_000
+        )
+        return {
+            "currentIndex": len(labels) - 1,
+            "currentProgress": min(0.999, max(0.0, elapsed / 86_400)),
+        }
+    if period != "month":
+        return {"currentIndex": None, "currentProgress": 1.0}
+
     current_label = local_now.strftime("%Y-%m")
     if labels[-1] != current_label:
         return {
@@ -1567,14 +1586,14 @@ function pushChurnRect(els, i, x, y, width, height, color, opacity, title) {
     if (restWidth > 0) {
       els.push(
         `<rect x="${x + fillWidth}" y="${y}" width="${restWidth}" height="${height}" fill="#e5eaf1" opacity="0.82">` +
-        `<title>Remaining month not counted yet</title></rect>`
+        `<title>Remaining __CURRENT_PERIOD_NOUN__ not counted yet</title></rect>`
       );
     }
   }
   if (fillWidth > 0) {
     els.push(
       `<rect x="${x}" y="${y}" width="${fillWidth}" height="${height}" fill="${color}" opacity="${opacity}">` +
-      `<title>${title}${ratio < 1 ? " month-to-date" : ""}</title></rect>`
+      `<title>${title}${ratio < 1 ? " __CURRENT_PERIOD_NOUN__-to-date" : ""}</title></rect>`
     );
   }
 }
@@ -1937,6 +1956,8 @@ def build_report_data(report: ReportInput) -> dict[str, object]:
             "docLoc": report.doc_loc_series,
             "churn": report.churn_series,
             "docChurn": report.doc_churn_series,
+            "docAdded": report.doc_added_series,
+            "docDeleted": report.doc_deleted_series,
             "added": report.added_series,
             "deleted": report.deleted_series,
             "locByKind": report.loc_kind_series,
@@ -2177,6 +2198,7 @@ def _render_html(
         .replace("__DETAIL_TITLE__", f"{period_title} Detail")
         .replace("__PERIOD_HEADER__", period_header)
         .replace("__CHANGE_HEADER__", f"{period_title} Change")
+        .replace("__CURRENT_PERIOD_NOUN__", period.lower())
         .replace("__SUBTITLE__", escape(subtitle))
         .replace("__GENERATED_AT__", escape(generated_label))
         .replace("__COUNTING_NOTES__", notes)
@@ -2419,6 +2441,7 @@ def main() -> int:
         + (f", {churn_cache_counts.get('disabled', 0)} disabled" if args.no_cache else "")
         + (f", {churn_cache_counts['error']} error" if churn_cache_counts["error"] else "")
     )
+    save_cache(cache_path, cache)
 
     # ------------------------------------------------------------------- LOC
     print("Computing LOC snapshots (parallel) ...")
@@ -2465,6 +2488,7 @@ def main() -> int:
             done_count += 1
             if done_count % 20 == 0 or done_count == len(tasks):
                 print(f"  {done_count}/{len(tasks)}", flush=True)
+                save_cache(cache_path, cache)
     elif tasks:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
@@ -2487,6 +2511,7 @@ def main() -> int:
                 done_count += 1
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
+                    save_cache(cache_path, cache)
 
     # ------------------------------------------------------- aggregation
     period_column = "Day" if args.period == "day" else "Month"
@@ -2500,6 +2525,8 @@ def main() -> int:
     doc_loc_series: list[int] = []
     churn_series: list[int] = []
     doc_churn_series: list[int] = []
+    doc_added_series: list[int] = []
+    doc_deleted_series: list[int] = []
     added_series: list[int] = []
     deleted_series: list[int] = []
     loc_kind_series: dict[str, list[int]] = {kind: [] for kind in SOURCE_KINDS}
@@ -2561,6 +2588,8 @@ def main() -> int:
         doc_loc_series.append(total_doc_loc)
         churn_series.append(total_churn)
         doc_churn_series.append(total_doc_churn)
+        doc_added_series.append(total_doc_added)
+        doc_deleted_series.append(total_doc_deleted)
         added_series.append(total_added)
         deleted_series.append(total_deleted)
         for kind in SOURCE_KINDS:
@@ -2625,6 +2654,8 @@ def main() -> int:
             doc_loc_series=doc_loc_series,
             churn_series=churn_series,
             doc_churn_series=doc_churn_series,
+            doc_added_series=doc_added_series,
+            doc_deleted_series=doc_deleted_series,
             added_series=added_series,
             deleted_series=deleted_series,
             loc_kind_series=loc_kind_series,

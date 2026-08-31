@@ -66,7 +66,7 @@ public actor CollectorClient {
         let arguments = [
             "--root", request.workspace.root.path,
             "--period", "day",
-            "--days", "61",
+            "--days", String(HistoryWindow.collectorDays),
             "--workers", "2",
             "--no-html",
             "--json", request.reportURL.path,

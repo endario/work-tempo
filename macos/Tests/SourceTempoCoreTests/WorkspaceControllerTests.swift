@@ -3,21 +3,41 @@ import XCTest
 @testable import SourceTempoCore
 
 final class WorkspaceControllerTests: XCTestCase {
-    func testAddCanonicalizesSelectsAndRejectsDuplicate() async throws {
+    func testLegacyStateAndAddingWorkspaceKeepAllScope() async throws {
         let fixture = try Fixture()
+        try fixture.store.save(WorkspaceState(
+            roots: [fixture.first.root.path],
+            selectedRoot: fixture.first.root.path,
+            selectedScope: nil
+        ))
         let controller = WorkspaceController(store: fixture.store)
-        _ = try await controller.load()
+        let loaded = try await controller.load()
+        XCTAssertEqual(loaded.scope, .all)
+        XCTAssertNil(loaded.selectedWorkspace)
 
-        let added = try await controller.add(root: fixture.first.root.appending(path: "."))
-        XCTAssertEqual(added.workspaces, [fixture.first])
-        XCTAssertEqual(added.selectedWorkspace, fixture.first)
+        let added = try await controller.add(root: fixture.second.root)
+        XCTAssertEqual(added.workspaces, [fixture.first, fixture.second])
+        XCTAssertEqual(added.scope, .all)
+        XCTAssertNil(added.selectedWorkspace)
 
         await XCTAssertThrowsErrorAsync(try await controller.add(root: fixture.first.root)) { error in
             XCTAssertEqual(error as? WorkspaceControllerError, .duplicateWorkspace(fixture.first.root.path))
         }
 
         let reloaded = try await WorkspaceController(store: fixture.store).load()
-        XCTAssertEqual(reloaded.selectedWorkspace, fixture.first)
+        XCTAssertEqual(reloaded.scope, .all)
+    }
+
+    func testLoadDeduplicatesCanonicalWorkspaceRoots() async throws {
+        let fixture = try Fixture()
+        try fixture.store.save(WorkspaceState(roots: [
+            fixture.first.root.path,
+            fixture.first.root.appending(path: ".").path,
+        ]))
+
+        let state = try await WorkspaceController(store: fixture.store).load()
+
+        XCTAssertEqual(state.workspaces, [fixture.first])
     }
 
     func testLoadReadsCachedReportsAndSelectionPersists() async throws {
@@ -27,7 +47,8 @@ final class WorkspaceControllerTests: XCTestCase {
             .write(to: fixture.store.reportURL(for: fixture.second))
         try fixture.store.save(WorkspaceState(
             roots: [fixture.first.root.path, fixture.second.root.path],
-            selectedRoot: fixture.first.root.path
+            selectedRoot: fixture.first.root.path,
+            selectedScope: fixture.first.root.path
         ))
         let controller = WorkspaceController(store: fixture.store)
 
@@ -37,19 +58,40 @@ final class WorkspaceControllerTests: XCTestCase {
         XCTAssertEqual(selected.selectedWorkspace, fixture.second)
         XCTAssertEqual(selected.selectedReport?.series.loc.last, report.series.loc.last)
         XCTAssertEqual(try fixture.store.load().selectedRoot, fixture.second.root.path)
+        XCTAssertEqual(try fixture.store.load().selectedScope, fixture.second.root.path)
     }
 
-    func testRemoveSelectsRemainingWorkspace() async throws {
+    func testAllAndWorkspaceScopesRoundTrip() async throws {
+        let fixture = try Fixture()
+        try fixture.store.save(WorkspaceState(
+            roots: [fixture.first.root.path],
+            selectedRoot: fixture.first.root.path,
+            selectedScope: fixture.first.root.path
+        ))
+        let controller = WorkspaceController(store: fixture.store)
+        let loaded = try await controller.load()
+        XCTAssertEqual(loaded.scope, .workspace(fixture.first))
+
+        let all = try await controller.selectAll()
+        XCTAssertEqual(all.scope, .all)
+        XCTAssertEqual(try fixture.store.load().selectedScope, "all")
+        XCTAssertNil(try fixture.store.load().selectedRoot)
+        let reloaded = try await WorkspaceController(store: fixture.store).load()
+        XCTAssertEqual(reloaded.scope, .all)
+    }
+
+    func testRemovingSelectedWorkspaceReturnsToAggregate() async throws {
         let fixture = try Fixture()
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()
         _ = try await controller.add(root: fixture.first.root)
         _ = try await controller.add(root: fixture.second.root)
+        _ = try await controller.select(fixture.second)
 
         let state = try await controller.remove(fixture.second)
 
         XCTAssertEqual(state.workspaces, [fixture.first])
-        XCTAssertEqual(state.selectedWorkspace, fixture.first)
+        XCTAssertEqual(state.scope, .all)
     }
 
     func testRemoveDeletesCachedReportBeforeWorkspaceCanBeReadded() async throws {
@@ -58,7 +100,8 @@ final class WorkspaceControllerTests: XCTestCase {
         try makeReportData(loc: Array(repeating: 777, count: 61)).write(to: reportURL)
         try fixture.store.save(WorkspaceState(
             roots: [fixture.first.root.path],
-            selectedRoot: fixture.first.root.path
+            selectedRoot: fixture.first.root.path,
+            selectedScope: fixture.first.root.path
         ))
         let controller = WorkspaceController(store: fixture.store)
         let loaded = try await controller.load()
@@ -77,6 +120,7 @@ final class WorkspaceControllerTests: XCTestCase {
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()
         _ = try await controller.add(root: fixture.first.root)
+        _ = try await controller.select(fixture.first)
         let ticket = await controller.beginRefresh(fixture.first)
         _ = await controller.succeedRefresh(ticket, workspace: fixture.first, report: existing)
         let retry = await controller.beginRefresh(fixture.first)

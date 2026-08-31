@@ -6,10 +6,12 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: snapshot.isRefreshing ? "arrow.trianglehead.2.clockwise.rotate.90" : "gauge.with.dots.needle.50percent")
+            Image(systemName: snapshot.isRefreshing ? "arrow.trianglehead.2.clockwise.rotate.90" : "metronome")
             Text(snapshot.menuValue)
                 .monospacedDigit()
-            if snapshot.dataState == .stale || snapshot.dataState == .failedWithCache {
+            if snapshot.dataState == .stale
+                || snapshot.dataState == .failedWithCache
+                || snapshot.dataState == .failedEmpty {
                 Image(systemName: "exclamationmark.circle.fill")
                     .imageScale(.small)
             }
