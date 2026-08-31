@@ -3,22 +3,12 @@ import Combine
 import Foundation
 import SourceTempoCore
 
-struct WorkspaceRowModel: Identifiable, Equatable {
-    let workspace: Workspace
-    let sourceValue: String
-    let churnValue: String
-    let hasError: Bool
-
-    var id: String { workspace.root.path }
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var workspaces: [Workspace] = []
     @Published private(set) var scope: DisplayScope = .all
     @Published private(set) var selectedWorkspace: Workspace?
     @Published private(set) var snapshot: DashboardSnapshot
-    @Published private(set) var workspaceRows: [WorkspaceRowModel] = []
     @Published private(set) var refreshProgress: String?
 
     private let store: WorkspaceStore
@@ -146,10 +136,17 @@ final class AppModel: ObservableObject {
             let state = await controller.state()
             let targets = state.workspaces.map { workspace in
                 let report = state.report(for: workspace)
+                let lastAttemptFailed: Bool
+                if case .failed = state.refreshState(for: workspace) {
+                    lastAttemptFailed = true
+                } else {
+                    lastAttemptFailed = false
+                }
                 return RefreshTarget(
                     workspace: workspace,
                     generatedAt: report.flatMap { Self.parseTimestamp($0.generatedAt) },
-                    dayCount: report?.period.labels.count ?? 0
+                    dayCount: report?.period.labels.count ?? 0,
+                    lastAttemptFailed: lastAttemptFailed
                 )
             }
             guard let plans = await coordinator.request(
@@ -207,23 +204,6 @@ final class AppModel: ObservableObject {
         scope = state.scope
         selectedWorkspace = state.selectedWorkspace
         selectedReport = state.selectedReport
-        workspaceRows = state.workspaces.map { workspace in
-            let report = state.report(for: workspace)
-            let summary = report.map(MomentumSummary.init)
-            let hasError: Bool
-            if case .failed = state.refreshState(for: workspace) {
-                hasError = true
-            } else {
-                hasError = false
-            }
-            return WorkspaceRowModel(
-                workspace: workspace,
-                sourceValue: summary.map { MetricFormatter.compact($0.sourceLOC) } ?? "--",
-                churnValue: summary.map { MetricFormatter.compact($0.dailyChurn) } ?? "--",
-                hasError: hasError
-            )
-        }
-
         switch state.scope {
         case .all:
             let refreshState = aggregateRefreshState(state)

@@ -31,7 +31,7 @@
 
 **Interfaces:**
 - Produces: `MomentumInput`, `MomentumSummary.init(input:)`, `MomentumSummary.init(report:)`, and `dailyChurn`.
-- Preserves: existing pace, net-growth, and current/previous churn semantics except that the daily average becomes explicit.
+- Preserves: existing net-growth and current/previous churn semantics except that the daily average becomes explicit.
 
 - [ ] Add failing tests proving `dailyChurn == currentChurn / 30`, the open day is excluded, pre-creation zeros remain calendar inactivity, and report/input initializers agree.
 - [ ] Run `swift test --package-path macos --filter MomentumSummaryTests` and confirm the new assertions fail.
@@ -50,7 +50,7 @@
 
 **Interfaces:**
 - Produces: decoded `scope.repositories`, `timeline`, `series.language`, `addedByKind`, and `deletedByKind` with alignment validation.
-- Produces: `checkpoint_cache(path, cache, completed, total)` used after churn and every snapshot progress batch.
+- Produces: `checkpoint_cache(path, cache)` used after churn and every snapshot progress batch.
 
 - [ ] Add failing Swift tests for the new fields and each misaligned nested series.
 - [ ] Add failing Python tests proving an intermediate cache checkpoint is atomic and contains newly completed snapshot entries.

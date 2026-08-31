@@ -42,9 +42,11 @@ public struct WorkspaceControllerState: Sendable {
     }
 
     public var reportsByWorkspace: [Workspace: ReportDocument] {
-        Dictionary(uniqueKeysWithValues: workspaces.compactMap { workspace in
-            reports[workspace.root.path].map { (workspace, $0) }
-        })
+        workspaces.reduce(into: [:]) { result, workspace in
+            if result[workspace] == nil {
+                result[workspace] = reports[workspace.root.path]
+            }
+        }
     }
 
     public func report(for workspace: Workspace) -> ReportDocument? {
@@ -70,7 +72,10 @@ public actor WorkspaceController {
 
     public func load() throws -> WorkspaceControllerState {
         let persisted = try store.load()
-        workspaces = persisted.roots.compactMap { try? Workspace(root: URL(fileURLWithPath: $0)) }
+        var seenRoots = Set<String>()
+        workspaces = persisted.roots
+            .compactMap { try? Workspace(root: URL(fileURLWithPath: $0)) }
+            .filter { seenRoots.insert($0.root.path).inserted }
         if let persistedScope = persisted.selectedScope,
            persistedScope != "all",
            let workspace = workspaces.first(where: { $0.root.path == persistedScope }) {

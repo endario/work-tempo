@@ -33,7 +33,7 @@ Adding a workspace keeps the current scope. Removing is available only for an in
 
 ## Aggregation
 
-One contributor cohort governs the entire screen: every tracked workspace with a valid report. Current totals, headline rate, pace, both charts, and the contributor caption all use exactly that cohort. Missing reports produce one explicit `N of M workspaces` partial state; no surface silently selects a different subset.
+One contributor cohort governs the entire screen: every tracked workspace with a valid report. Current totals, headline rate, and both charts use exactly that cohort. Missing reports produce one explicit `N of M workspaces` partial state; no surface silently selects a different subset.
 
 Before aggregation, the client intersects `scope.repositories[].path` across reports. If the same resolved repository path appears under two tracked workspaces, the portfolio view refuses to sum and names both workspaces and the collision. The current report schema cannot deduplicate historical workspace-level series, so refusal is the only correct behavior.
 
@@ -57,9 +57,7 @@ Collection freshness is evaluated per workspace and never from an aggregate time
 
 Collector requests retain 185 daily labels; the presentation selects the common history needed for six calendar months.
 
-An existing Adastra 61-to-120-day cache extension was measured locally at 2 minutes 12 seconds and expanded the cache from 708 to 1,147 snapshots. Short-history and first collections remain untimed, visible, and cancellable; already-complete reports retain the normal timeout.
-
-Before relying on cancellation, the collector checkpoints its atomic cache after churn collection and after each snapshot progress batch, so a cancelled extension resumes instead of restarting from zero. The measured command was `python3 -m source_tempo --root /Users/endario/adastra --period day --days 120 --workers 2 --no-html` on this macOS host on 2026-08-31.
+Short-history and first collections remain untimed, visible, and cancellable; already-complete reports retain the normal timeout. The collector checkpoints its atomic cache after churn collection and after each snapshot progress batch, so a cancelled extension resumes instead of restarting from zero.
 
 In All Workspaces mode:
 
@@ -82,7 +80,7 @@ The hero is one compact row with two equally weighted typographic metrics:
 1. Trailing 30-day source churn per day with a daily sparkline.
 2. Net source LOC over the trailing 30 closed days with a cumulative sparkline.
 
-The menu-bar item uses the same daily churn average as its primary value. The four metric columns continue to show current source, code, tests, and docs totals. Workspace rows replace total 30-day churn with the same per-day rate.
+The menu-bar item uses the same daily churn average as its primary value. The four metric columns show current source, code, tests, and docs totals.
 
 The dashboard carries both original analytical views:
 
@@ -114,7 +112,7 @@ The collector already supports multiple repositories and would produce one natur
 
 ### Recommended: typed in-memory aggregation
 
-Introduce one synthetic in-memory metric input used by both individual and aggregate reports. `MomentumSummary.init(report:)` adapts a report into that input; aggregation produces the same input on the common grid and never implements pace math in parallel. This keeps metric semantics deterministic and preserves each workspace's counting policy.
+Introduce one synthetic in-memory metric input used by both individual and aggregate reports. `MomentumSummary.init(report:)` adapts a report into that input; aggregation produces the same input on the common grid and never implements headline math in parallel. This keeps metric semantics deterministic and preserves each workspace's counting policy.
 
 The shared-input extraction lands first as a no-behavior-change refactor with existing tests green. Scope, report decoding, collector retention, queueing, and presentation then build on that verified seam in independently testable commits.
 
@@ -123,11 +121,11 @@ The shared-input extraction lands first as a no-behavior-change refactor with ex
 Core tests must prove:
 
 - Legacy state without `selectedScope` migrates to All Workspaces; explicit aggregate and workspace scopes round-trip in schema version 1.
-- Aggregate current totals, rate, pace, and charts use one identical contributor cohort and one named watermark.
+- Aggregate current totals, rate, and charts use one identical contributor cohort and one named watermark.
 - Repository path overlap and mixed-timezone reports refuse aggregation with actionable conflicts.
 - Aggregate history uses one common closed grid and never drops a contributor to satisfy history.
 - Daily churn excludes docs and the current partial day, divides by 30, and becomes the menu value.
-- Rate and pace align every contributor to one common through-date; pre-creation zeros remain valid calendar-day inactivity.
+- The rate aligns every contributor to one common through-date; pre-creation zeros remain valid calendar-day inactivity.
 - Individual and aggregate snapshots share the same metric semantics.
 - Chart aggregation preserves code, test, and documentation additions and removals as six independent series.
 - Launch, hourly, and wake refresh at most one missing, short, or stale report; manual refresh queues all with visible progress.

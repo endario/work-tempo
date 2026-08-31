@@ -11,11 +11,18 @@ public struct RefreshTarget: Equatable, Sendable {
     public let workspace: Workspace
     public let generatedAt: Date?
     public let dayCount: Int
+    public let lastAttemptFailed: Bool
 
-    public init(workspace: Workspace, generatedAt: Date?, dayCount: Int) {
+    public init(
+        workspace: Workspace,
+        generatedAt: Date?,
+        dayCount: Int,
+        lastAttemptFailed: Bool = false
+    ) {
         self.workspace = workspace
         self.generatedAt = generatedAt
         self.dayCount = dayCount
+        self.lastAttemptFailed = lastAttemptFailed
     }
 }
 
@@ -75,7 +82,8 @@ public actor RefreshCoordinator {
         return selected.map { target in
             RefreshPlan(
                 workspace: target.workspace,
-                timeout: target.generatedAt == nil || target.dayCount < requiredDayCount
+                timeout: !target.lastAttemptFailed
+                    && (target.generatedAt == nil || target.dayCount < requiredDayCount)
                     ? nil
                     : .seconds(120)
             )
@@ -87,16 +95,22 @@ public actor RefreshCoordinator {
     }
 
     private func unattendedTarget(from targets: [RefreshTarget], now: Date) -> RefreshTarget? {
-        if let missing = targets.first(where: { $0.generatedAt == nil }) {
+        let healthy = targets.filter { !$0.lastAttemptFailed }
+        if let missing = healthy.first(where: { $0.generatedAt == nil }) {
             return missing
         }
-        if let short = targets.first(where: { $0.dayCount < requiredDayCount }) {
+        if let short = healthy.first(where: { $0.dayCount < requiredDayCount }) {
             return short
         }
-        return targets
-            .filter { target in
+        if let stale = healthy.filter({ target in
                 target.generatedAt.map { now.timeIntervalSince($0) >= staleInterval } ?? true
-            }
+            }).min(by: { lhs, rhs in
+                (lhs.generatedAt ?? .distantPast) < (rhs.generatedAt ?? .distantPast)
+            }) {
+            return stale
+        }
+        return targets
+            .filter(\.lastAttemptFailed)
             .min { lhs, rhs in
                 (lhs.generatedAt ?? .distantPast) < (rhs.generatedAt ?? .distantPast)
             }

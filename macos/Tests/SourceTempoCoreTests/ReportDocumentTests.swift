@@ -88,6 +88,22 @@ final class ReportDocumentTests: XCTestCase {
         }
     }
 
+    func testRejectsDuplicatePeriodLabels() throws {
+        let data = try JSONSerialization.jsonObject(with: makeReportData()) as! [String: Any]
+        var document = data
+        var period = document["period"] as! [String: Any]
+        var labels = period["labels"] as! [String]
+        labels[1] = labels[0]
+        period["labels"] = labels
+        document["period"] = period
+
+        XCTAssertThrowsError(try ReportDocument.decode(
+            data: JSONSerialization.data(withJSONObject: document)
+        )) { error in
+            XCTAssertEqual(error as? ReportError, .duplicatePeriodLabel(labels[0]))
+        }
+    }
+
     func testRejectsNonDailyReportAndMisalignedSeries() throws {
         var object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any]

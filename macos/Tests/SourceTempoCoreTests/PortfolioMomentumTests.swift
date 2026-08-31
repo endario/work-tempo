@@ -7,8 +7,28 @@ final class PortfolioMomentumTests: XCTestCase {
         let first = try workspace("first")
         let second = try workspace("second")
         let reports = [
-            first: try report(root: first.root.path, loc: 200, churn: 2),
-            second: try report(root: second.root.path, loc: 300, churn: 3),
+            first: try report(
+                root: first.root.path,
+                loc: 200,
+                churn: 2,
+                codeAdded: 1,
+                testAdded: 2,
+                codeDeleted: 3,
+                testDeleted: 4,
+                docAdded: 5,
+                docDeleted: 6
+            ),
+            second: try report(
+                root: second.root.path,
+                loc: 300,
+                churn: 3,
+                codeAdded: 10,
+                testAdded: 20,
+                codeDeleted: 30,
+                testDeleted: 40,
+                docAdded: 50,
+                docDeleted: 60
+            ),
         ]
 
         let portfolio = try PortfolioMomentum.build(workspaces: [first, second], reports: reports).get()
@@ -25,6 +45,12 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(portfolio.chart?.currentProgress, 0.5)
         XCTAssertEqual(portfolio.chart?.codeLoc.last, 460)
         XCTAssertEqual(portfolio.chart?.testLoc.last, 40)
+        XCTAssertEqual(portfolio.chart?.codeAdded.last, 11)
+        XCTAssertEqual(portfolio.chart?.testAdded.last, 22)
+        XCTAssertEqual(portfolio.chart?.codeDeleted.last, 33)
+        XCTAssertEqual(portfolio.chart?.testDeleted.last, 44)
+        XCTAssertEqual(portfolio.chart?.docAdded.last, 55)
+        XCTAssertEqual(portfolio.chart?.docDeleted.last, 66)
     }
 
     func testMissingReportProducesOnePartialCohort() throws {
@@ -83,6 +109,12 @@ final class PortfolioMomentumTests: XCTestCase {
         days: Int = 185,
         loc: Int = 200,
         churn: Int = 2,
+        codeAdded: Int? = nil,
+        testAdded: Int = 0,
+        codeDeleted: Int = 0,
+        testDeleted: Int = 0,
+        docAdded: Int = 0,
+        docDeleted: Int = 0,
         repositories: [String]? = nil,
         timezone: String = "+08 (+08:00)"
     ) throws -> ReportDocument {
@@ -94,6 +126,12 @@ final class PortfolioMomentumTests: XCTestCase {
             churn: Array(repeating: churn, count: days),
             added: Array(repeating: churn, count: days),
             deleted: Array(repeating: 0, count: days),
+            codeAdded: Array(repeating: codeAdded ?? churn, count: days),
+            testAdded: Array(repeating: testAdded, count: days),
+            codeDeleted: Array(repeating: codeDeleted, count: days),
+            testDeleted: Array(repeating: testDeleted, count: days),
+            docAdded: Array(repeating: docAdded, count: days),
+            docDeleted: Array(repeating: docDeleted, count: days),
             repositoryPaths: repositories ?? [root],
             timezone: timezone
         ))

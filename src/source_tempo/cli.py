@@ -599,13 +599,8 @@ def save_cache(path: Path | None, cache: dict) -> None:
 def checkpoint_cache(
     path: Path | None,
     cache: dict | None,
-    completed: int,
-    total: int,
-    batch_size: int = 20,
 ) -> None:
-    if cache is None or completed <= 0:
-        return
-    if completed % batch_size == 0 or completed == total:
+    if cache is not None:
         save_cache(path, cache)
 
 
@@ -2500,7 +2495,7 @@ def main() -> int:
             done_count += 1
             if done_count % 20 == 0 or done_count == len(tasks):
                 print(f"  {done_count}/{len(tasks)}", flush=True)
-                checkpoint_cache(cache_path, cache, done_count, len(tasks))
+                checkpoint_cache(cache_path, cache)
     elif tasks:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
@@ -2523,7 +2518,7 @@ def main() -> int:
                 done_count += 1
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
-                    checkpoint_cache(cache_path, cache, done_count, len(tasks))
+                    checkpoint_cache(cache_path, cache)
 
     # ------------------------------------------------------- aggregation
     period_column = "Day" if args.period == "day" else "Month"

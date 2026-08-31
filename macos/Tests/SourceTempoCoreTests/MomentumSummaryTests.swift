@@ -48,6 +48,8 @@ final class MomentumSummaryTests: XCTestCase {
     }
 
     func testCompactMetricFormatting() {
+        XCTAssertEqual(MetricFormatter.compact(0.33), "0.3")
+        XCTAssertEqual(MetricFormatter.compact(2.0), "2")
         XCTAssertEqual(MetricFormatter.compact(999), "999")
         XCTAssertEqual(MetricFormatter.compact(1_200), "1.2K")
         XCTAssertEqual(MetricFormatter.compact(1_180_141), "1.18M")

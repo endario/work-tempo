@@ -4,6 +4,7 @@ public enum ReportError: Error, Equatable, LocalizedError, Sendable {
     case unsupportedSchema(Int)
     case unsupportedPeriod(String)
     case invalidGeneratedAt(String)
+    case duplicatePeriodLabel(String)
     case misalignedSeries(String)
 
     public var errorDescription: String? {
@@ -14,6 +15,8 @@ public enum ReportError: Error, Equatable, LocalizedError, Sendable {
             "The menu app requires daily reports, not \(period)"
         case let .invalidGeneratedAt(value):
             "Invalid report generation date: \(value)"
+        case let .duplicatePeriodLabel(label):
+            "Report period contains a duplicate label: \(label)"
         case let .misalignedSeries(name):
             "Report series does not align with period labels: \(name)"
         }
@@ -61,6 +64,10 @@ public struct ReportDocument: Decodable, Sendable {
     }
 
     private func validateAlignment() throws {
+        var seenLabels = Set<String>()
+        if let duplicate = period.labels.first(where: { !seenLabels.insert($0).inserted }) {
+            throw ReportError.duplicatePeriodLabel(duplicate)
+        }
         let count = period.labels.count
         let aligned: [(String, Int)] = [
             ("loc", series.loc.count),

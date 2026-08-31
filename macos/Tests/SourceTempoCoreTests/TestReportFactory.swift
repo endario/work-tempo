@@ -11,6 +11,10 @@ func makeReportData(
     churn: [Int]? = nil,
     added: [Int]? = nil,
     deleted: [Int]? = nil,
+    codeAdded: [Int]? = nil,
+    testAdded: [Int]? = nil,
+    codeDeleted: [Int]? = nil,
+    testDeleted: [Int]? = nil,
     docAdded: [Int]? = nil,
     docDeleted: [Int]? = nil,
     repositoryPaths: [String] = ["/tmp/fixture"],
@@ -39,6 +43,10 @@ func makeReportData(
     let churnValues = values(churn, default: 0)
     let addedValues = values(added, default: 0)
     let deletedValues = values(deleted, default: 0)
+    let codeAddedValues = codeAdded ?? addedValues
+    let testAddedValues = values(testAdded, default: 0)
+    let codeDeletedValues = codeDeleted ?? deletedValues
+    let testDeletedValues = values(testDeleted, default: 0)
 
     let document: [String: Any] = [
         "schemaVersion": schemaVersion,
@@ -75,8 +83,14 @@ func makeReportData(
             "deleted": deletedValues,
             "locByKind": ["code": codeValues, "test": testValues],
             "churnByKind": ["code": churnValues, "test": values(nil, default: 0)],
-            "addedByKind": ["code": addedValues, "test": values(nil, default: 0)],
-            "deletedByKind": ["code": deletedValues, "test": values(nil, default: 0)],
+            "addedByKind": [
+                "code": codeAddedValues,
+                "test": testAddedValues,
+            ],
+            "deletedByKind": [
+                "code": codeDeletedValues,
+                "test": testDeletedValues,
+            ],
             "language": (languages ?? ["Swift": codeValues, "Test": testValues]).map {
                 ["language": $0.key, "values": $0.value]
             },

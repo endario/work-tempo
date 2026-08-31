@@ -91,7 +91,10 @@ public struct MomentumSummary: Equatable, Sendable {
 
 public enum MetricFormatter {
     public static func compact(_ value: Double) -> String {
-        compact(Int(value.rounded()))
+        if value != 0, abs(value) < 10, value.rounded() != value {
+            return decimal(value, places: 1)
+        }
+        return compact(Int(value.rounded()))
     }
 
     public static func compact(_ value: Int) -> String {

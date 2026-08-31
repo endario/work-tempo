@@ -678,21 +678,18 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
-    def test_cache_checkpoint_persists_completed_snapshot_batches(self) -> None:
+    def test_cache_checkpoint_persists_current_snapshot_state(self) -> None:
         tempo = load_script("tempo_cache_checkpoint_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "cache.json"
             cache = tempo.empty_cache()
             cache["snapshots"]["first"] = {"total": 1}
 
-            tempo.checkpoint_cache(output, cache, completed=19, total=40)
-            self.assertFalse(output.exists())
-
-            tempo.checkpoint_cache(output, cache, completed=20, total=40)
+            tempo.checkpoint_cache(output, cache)
             self.assertEqual(json.loads(output.read_text())["snapshots"], {"first": {"total": 1}})
 
             cache["snapshots"]["last"] = {"total": 2}
-            tempo.checkpoint_cache(output, cache, completed=21, total=21)
+            tempo.checkpoint_cache(output, cache)
             self.assertIn("last", json.loads(output.read_text())["snapshots"])
 
     def test_html_generated_badge_preserves_named_timezone(self) -> None:

@@ -235,7 +235,7 @@ public struct PortfolioMomentum: Equatable, Sendable {
         }
 
         let commonClosed = commonClosedLabels(contributors.map(\.1))
-        let momentumLabels = Array(commonClosed.suffix(min(90, commonClosed.count)))
+        let momentumLabels = Array(commonClosed.suffix(min(30, commonClosed.count)))
         let momentumInput = makeMomentumInput(reports: contributors.map(\.1), labels: momentumLabels)
         let aligned = momentumLabels.count >= 30
             ? AlignedMomentum(input: momentumInput, summary: MomentumSummary(input: momentumInput))
@@ -343,7 +343,10 @@ public struct PortfolioMomentum: Equatable, Sendable {
     ) -> [Int] {
         var result = Array(repeating: 0, count: labels.count)
         for report in reports {
-            let indexes = Dictionary(uniqueKeysWithValues: report.period.labels.enumerated().map { ($0.element, $0.offset) })
+            let indexes = Dictionary(
+                report.period.labels.enumerated().map { ($0.element, $0.offset) },
+                uniquingKeysWith: { first, _ in first }
+            )
             let series = values(report)
             for (outputIndex, label) in labels.enumerated() {
                 if let inputIndex = indexes[label] {

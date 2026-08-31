@@ -5,11 +5,18 @@ import XCTest
 final class WorkspaceControllerTests: XCTestCase {
     func testLegacyStateAndAddingWorkspaceKeepAllScope() async throws {
         let fixture = try Fixture()
+        try fixture.store.save(WorkspaceState(
+            roots: [fixture.first.root.path],
+            selectedRoot: fixture.first.root.path,
+            selectedScope: nil
+        ))
         let controller = WorkspaceController(store: fixture.store)
-        _ = try await controller.load()
+        let loaded = try await controller.load()
+        XCTAssertEqual(loaded.scope, .all)
+        XCTAssertNil(loaded.selectedWorkspace)
 
-        let added = try await controller.add(root: fixture.first.root.appending(path: "."))
-        XCTAssertEqual(added.workspaces, [fixture.first])
+        let added = try await controller.add(root: fixture.second.root)
+        XCTAssertEqual(added.workspaces, [fixture.first, fixture.second])
         XCTAssertEqual(added.scope, .all)
         XCTAssertNil(added.selectedWorkspace)
 
@@ -19,6 +26,18 @@ final class WorkspaceControllerTests: XCTestCase {
 
         let reloaded = try await WorkspaceController(store: fixture.store).load()
         XCTAssertEqual(reloaded.scope, .all)
+    }
+
+    func testLoadDeduplicatesCanonicalWorkspaceRoots() async throws {
+        let fixture = try Fixture()
+        try fixture.store.save(WorkspaceState(roots: [
+            fixture.first.root.path,
+            fixture.first.root.appending(path: ".").path,
+        ]))
+
+        let state = try await WorkspaceController(store: fixture.store).load()
+
+        XCTAssertEqual(state.workspaces, [fixture.first])
     }
 
     func testLoadReadsCachedReportsAndSelectionPersists() async throws {
@@ -61,7 +80,7 @@ final class WorkspaceControllerTests: XCTestCase {
         XCTAssertEqual(reloaded.scope, .all)
     }
 
-    func testRemoveSelectsRemainingWorkspace() async throws {
+    func testRemovingSelectedWorkspaceReturnsToAggregate() async throws {
         let fixture = try Fixture()
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()

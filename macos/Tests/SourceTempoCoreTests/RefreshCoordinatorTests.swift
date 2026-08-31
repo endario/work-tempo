@@ -138,6 +138,50 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertNotNil(manual)
     }
 
+    func testFailedTargetDoesNotStarveHealthyUnattendedWork() async throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let failed = try workspace("failed")
+        let stale = try workspace("stale")
+        var coordinator = RefreshCoordinator()
+
+        var plans = await coordinator.request(
+            trigger: .timer,
+            scope: .all,
+            targets: [
+                RefreshTarget(
+                    workspace: failed,
+                    generatedAt: nil,
+                    dayCount: 0,
+                    lastAttemptFailed: true
+                ),
+                RefreshTarget(
+                    workspace: stale,
+                    generatedAt: now.addingTimeInterval(-7_200),
+                    dayCount: 185
+                ),
+            ],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertEqual(plans?.map(\.workspace), [stale])
+
+        coordinator = RefreshCoordinator()
+        plans = await coordinator.request(
+            trigger: .timer,
+            scope: .all,
+            targets: [RefreshTarget(
+                workspace: failed,
+                generatedAt: nil,
+                dayCount: 0,
+                lastAttemptFailed: true
+            )],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertEqual(plans?.map(\.workspace), [failed])
+        XCTAssertEqual(plans?.first?.timeout, .seconds(120))
+    }
+
     private func workspace(_ name: String) throws -> Workspace {
         try Workspace(root: URL(fileURLWithPath: "/tmp/\(name)"))
     }
