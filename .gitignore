@@ -5,7 +5,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 build/
+macos/.build/
 dist/
 .source-tempo.local.json
 .claude/independent-runs/
-

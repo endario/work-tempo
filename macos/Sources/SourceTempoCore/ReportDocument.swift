@@ -1,0 +1,107 @@
+import Foundation
+
+public enum ReportError: Error, Equatable, LocalizedError, Sendable {
+    case unsupportedSchema(Int)
+    case unsupportedPeriod(String)
+    case invalidGeneratedAt(String)
+    case misalignedSeries(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .unsupportedSchema(version):
+            "Unsupported SourceTempo report schema: \(version)"
+        case let .unsupportedPeriod(period):
+            "The menu app requires daily reports, not \(period)"
+        case let .invalidGeneratedAt(value):
+            "Invalid report generation date: \(value)"
+        case let .misalignedSeries(name):
+            "Report series does not align with period labels: \(name)"
+        }
+    }
+}
+
+public struct ReportDocument: Decodable, Sendable {
+    public let schemaVersion: Int
+    public let generatedAt: String
+    public let workspace: WorkspaceReport
+    public let period: PeriodReport
+    public let series: MetricSeries
+
+    public var generatedDate: String {
+        String(generatedAt.prefix(10))
+    }
+
+    public var closedDayRange: Range<Int>? {
+        var end = period.labels.count
+        if period.labels.last == generatedDate {
+            end -= 1
+        }
+        guard end >= 60 else { return nil }
+        return (end - 60)..<end
+    }
+
+    public static func decode(data: Data) throws -> ReportDocument {
+        let document = try JSONDecoder().decode(ReportDocument.self, from: data)
+        guard document.schemaVersion == 1 else {
+            throw ReportError.unsupportedSchema(document.schemaVersion)
+        }
+        guard document.period.kind == "day" else {
+            throw ReportError.unsupportedPeriod(document.period.kind)
+        }
+        guard document.generatedDate.count == 10,
+              document.generatedDate[document.generatedDate.index(document.generatedDate.startIndex, offsetBy: 4)] == "-",
+              document.generatedDate[document.generatedDate.index(document.generatedDate.startIndex, offsetBy: 7)] == "-"
+        else {
+            throw ReportError.invalidGeneratedAt(document.generatedAt)
+        }
+        try document.validateAlignment()
+        return document
+    }
+
+    private func validateAlignment() throws {
+        let count = period.labels.count
+        let aligned: [(String, Int)] = [
+            ("loc", series.loc.count),
+            ("docLoc", series.docLoc.count),
+            ("churn", series.churn.count),
+            ("docChurn", series.docChurn.count),
+            ("added", series.added.count),
+            ("deleted", series.deleted.count),
+            ("locByKind.code", series.locByKind.code.count),
+            ("locByKind.test", series.locByKind.test.count),
+            ("churnByKind.code", series.churnByKind.code.count),
+            ("churnByKind.test", series.churnByKind.test.count),
+        ]
+        if let mismatch = aligned.first(where: { $0.1 != count }) {
+            throw ReportError.misalignedSeries(mismatch.0)
+        }
+    }
+}
+
+public struct WorkspaceReport: Decodable, Sendable {
+    public let root: String
+    public let title: String
+    public let timezone: String
+    public let timezoneAbbreviation: String
+}
+
+public struct PeriodReport: Decodable, Sendable {
+    public let kind: String
+    public let labels: [String]
+}
+
+public struct MetricSeries: Decodable, Sendable {
+    public let loc: [Int]
+    public let docLoc: [Int]
+    public let churn: [Int]
+    public let docChurn: [Int]
+    public let added: [Int]
+    public let deleted: [Int]
+    public let locByKind: KindSeries
+    public let churnByKind: KindSeries
+}
+
+public struct KindSeries: Decodable, Sendable {
+    public let code: [Int]
+    public let test: [Int]
+}
