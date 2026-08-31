@@ -14,6 +14,7 @@ final class MomentumSummaryTests: XCTestCase {
         let summary = MomentumSummary(report: report)
 
         XCTAssertEqual(summary.currentChurn, 300)
+        XCTAssertEqual(summary.dailyChurn, 10, accuracy: 0.000_001)
         XCTAssertEqual(summary.previousChurn, 150)
         XCTAssertEqual(summary.netGrowth, 90)
         guard case let .ready(share) = summary.pace else {
@@ -34,14 +35,14 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.previousChurn, 30)
     }
 
-    func testReportsInsufficientHistoryForShortOrYoungReports() throws {
+    func testReportsInsufficientHistoryOnlyWhenClosedWindowIsShort() throws {
         let short = try ReportDocument.decode(data: makeReportData(dayCount: 30))
         XCTAssertEqual(MomentumSummary(report: short).pace, .insufficientHistory)
 
         var youngLoc = Array(repeating: 0, count: 31)
         youngLoc.append(contentsOf: Array(repeating: 100, count: 30))
         let young = try ReportDocument.decode(data: makeReportData(loc: youngLoc))
-        XCTAssertEqual(MomentumSummary(report: young).pace, .insufficientHistory)
+        XCTAssertEqual(MomentumSummary(report: young).pace, .noRecentActivity)
     }
 
     func testDistinguishesNewAndNoActivity() throws {
@@ -65,6 +66,19 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.trend.count, 56)
         XCTAssertEqual(summary.trend.first?.code, 140)
         XCTAssertEqual(summary.trend.first?.test, 80)
+    }
+
+    func testReportAdapterAndSyntheticInputShareOneMetricEngine() throws {
+        let report = try ReportDocument.decode(data: makeReportData(
+            churn: Array(repeating: 2, count: 30) + Array(repeating: 3, count: 30) + [99_999],
+            added: Array(repeating: 1, count: 61),
+            deleted: Array(repeating: 2, count: 61)
+        ))
+
+        XCTAssertEqual(
+            MomentumSummary(report: report),
+            MomentumSummary(input: MomentumInput(report: report))
+        )
     }
 
     func testCompactMetricFormatting() {

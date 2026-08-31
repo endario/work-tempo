@@ -118,7 +118,6 @@ final class AppSnapshotModelTests: XCTestCase {
         let cases: [(ReportDocument, String, String)] = [
             (try report(currentChurn: 20, previousChurn: 0), "New activity", "20 current / 0 previous"),
             (try report(currentChurn: 0, previousChurn: 0), "No recent activity", "0 current / 0 previous"),
-            (try report(currentChurn: 20, previousChurn: 10, young: true), "Building history", "60 closed days required"),
         ]
 
         for (report, label, detail) in cases {
@@ -139,16 +138,14 @@ final class AppSnapshotModelTests: XCTestCase {
         loc: Int = 220,
         code: Int = 140,
         test: Int = 80,
-        docs: Int = 50,
-        young: Bool = false
+        docs: Int = 50
     ) throws -> ReportDocument {
         var churn = Array(repeating: 0, count: 61)
         churn.replaceSubrange(0..<30, with: repeatElement(previousChurn / 30, count: 30))
         churn.replaceSubrange(30..<60, with: repeatElement(currentChurn / 30, count: 30))
         if previousChurn % 30 != 0 { churn[0] += previousChurn % 30 }
         if currentChurn % 30 != 0 { churn[30] += currentChurn % 30 }
-        var locValues = Array(repeating: loc, count: 61)
-        if young { locValues[0] = 0 }
+        let locValues = Array(repeating: loc, count: 61)
         return try ReportDocument.decode(data: makeReportData(
             loc: locValues,
             code: Array(repeating: code, count: 61),

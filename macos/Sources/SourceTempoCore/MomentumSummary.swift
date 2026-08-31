@@ -14,40 +14,93 @@ public struct TrendPoint: Identifiable, Equatable, Sendable {
     public let test: Int
 }
 
+public struct MomentumInput: Equatable, Sendable {
+    public let labels: [String]
+    public let generatedDate: String
+    public let loc: [Int]
+    public let docLoc: [Int]
+    public let codeLoc: [Int]
+    public let testLoc: [Int]
+    public let churn: [Int]
+    public let added: [Int]
+    public let deleted: [Int]
+
+    public init(
+        labels: [String],
+        generatedDate: String,
+        loc: [Int],
+        docLoc: [Int],
+        codeLoc: [Int],
+        testLoc: [Int],
+        churn: [Int],
+        added: [Int],
+        deleted: [Int]
+    ) {
+        self.labels = labels
+        self.generatedDate = generatedDate
+        self.loc = loc
+        self.docLoc = docLoc
+        self.codeLoc = codeLoc
+        self.testLoc = testLoc
+        self.churn = churn
+        self.added = added
+        self.deleted = deleted
+    }
+
+    public init(report: ReportDocument) {
+        self.init(
+            labels: report.period.labels,
+            generatedDate: report.generatedDate,
+            loc: report.series.loc,
+            docLoc: report.series.docLoc,
+            codeLoc: report.series.locByKind.code,
+            testLoc: report.series.locByKind.test,
+            churn: report.series.churn,
+            added: report.series.added,
+            deleted: report.series.deleted
+        )
+    }
+}
+
 public struct MomentumSummary: Equatable, Sendable {
     public let sourceLOC: Int
     public let codeLOC: Int
     public let testLOC: Int
     public let docsLOC: Int
     public let currentChurn: Int
+    public let dailyChurn: Double
     public let previousChurn: Int
     public let netGrowth: Int
     public let pace: PaceState
     public let trend: [TrendPoint]
 
     public init(report: ReportDocument) {
-        sourceLOC = report.series.loc.last ?? 0
-        codeLOC = report.series.locByKind.code.last ?? 0
-        testLOC = report.series.locByKind.test.last ?? 0
-        docsLOC = report.series.docLoc.last ?? 0
+        self.init(input: MomentumInput(report: report))
+    }
 
-        let closedEnd = report.period.labels.last == report.generatedDate
-            ? max(0, report.period.labels.count - 1)
-            : report.period.labels.count
+    public init(input: MomentumInput) {
+        sourceLOC = input.loc.last ?? 0
+        codeLOC = input.codeLoc.last ?? 0
+        testLOC = input.testLoc.last ?? 0
+        docsLOC = input.docLoc.last ?? 0
+
+        let closedEnd = input.labels.last == input.generatedDate
+            ? max(0, input.labels.count - 1)
+            : input.labels.count
         let currentStart = max(0, closedEnd - 30)
-        currentChurn = report.series.churn[currentStart..<closedEnd].reduce(0, +)
+        currentChurn = input.churn[currentStart..<closedEnd].reduce(0, +)
+        dailyChurn = Double(currentChurn) / 30.0
         netGrowth = zip(
-            report.series.added[currentStart..<closedEnd],
-            report.series.deleted[currentStart..<closedEnd]
+            input.added[currentStart..<closedEnd],
+            input.deleted[currentStart..<closedEnd]
         ).reduce(0) { $0 + $1.0 - $1.1 }
 
-        if let range = report.closedDayRange {
+        if closedEnd >= 60 {
+            let range = (closedEnd - 60)..<closedEnd
             let midpoint = range.lowerBound + 30
-            previousChurn = report.series.churn[range.lowerBound..<midpoint].reduce(0, +)
-            let completeCurrent = report.series.churn[midpoint..<range.upperBound].reduce(0, +)
-            if report.series.loc[range.lowerBound] == 0 {
-                pace = .insufficientHistory
-            } else if previousChurn == 0, completeCurrent == 0 {
+            previousChurn = input.churn[range.lowerBound..<midpoint].reduce(0, +)
+            let completeCurrent = input.churn[midpoint..<range.upperBound].reduce(0, +)
+            if previousChurn == 0, completeCurrent == 0 {
                 pace = .noRecentActivity
             } else if previousChurn == 0 {
                 pace = .newActivity
@@ -59,12 +112,12 @@ public struct MomentumSummary: Equatable, Sendable {
             pace = .insufficientHistory
         }
 
-        let firstSourceIndex = report.series.loc.firstIndex(where: { $0 > 0 }) ?? report.series.loc.count
-        trend = (firstSourceIndex..<report.period.labels.count).map { index in
+        let firstSourceIndex = input.loc.firstIndex(where: { $0 > 0 }) ?? input.loc.count
+        trend = (firstSourceIndex..<input.labels.count).map { index in
             TrendPoint(
-                label: report.period.labels[index],
-                code: report.series.locByKind.code[index],
-                test: report.series.locByKind.test[index]
+                label: input.labels[index],
+                code: input.codeLoc[index],
+                test: input.testLoc[index]
             )
         }
     }
