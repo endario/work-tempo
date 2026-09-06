@@ -4,19 +4,19 @@
 
 ## Goal
 
-Make Source Tempo open on an honest portfolio-wide view of every tracked Git workspace. The primary tracker becomes source churn per day over the trailing 30 closed days. The dashboard shows day-end source lines across six months and six calendar months of monthly churn. Individual workspace inspection remains available.
+Make Source Tempo open on an honest portfolio-wide view of every tracked Git workspace. The primary tracker becomes source churn per day over the trailing closed days, up to thirty. The dashboard shows day-end source lines across six months and six calendar months of monthly churn. Individual workspace inspection remains available.
 
 ## Metric Contract
 
-The headline metric is the arithmetic mean of source churn across the trailing 30 closed calendar days:
+The headline metric is the arithmetic mean of source churn over its window:
 
 ```text
-daily churn = sum(source additions + source deletions for 30 closed days) / 30
+daily churn = sum(source additions + source deletions over the window) / days in the window
 ```
 
-Documentation churn and the current partial day remain excluded. Zero-filled days before a repository existed correctly represent no churn in that tracked project during the calendar window. It is displayed compactly as, for example, `8.4K / day` in the hero and `8.4K/d` in the menu bar.
+The window is the trailing closed days, up to thirty, starting no earlier than the first day the workspace had tracked source or churn. Documentation churn and the current partial day are excluded.
 
-Net source LOC over the same trailing 30 closed days is the second hero metric. Both hero metrics use compact sparklines and expose their definitions through tooltips rather than permanent captions.
+Net source LOC over the same window is the second hero metric. Both expose their definitions through tooltips on the figure rather than permanent captions.
 
 ## Scope Model
 
@@ -39,7 +39,7 @@ Before aggregation, the client intersects `scope.repositories[].path` across rep
 
 All contributors must also report the same timezone. A mismatch refuses aggregation until those workspaces are refreshed under the active system timezone; matching date strings from different day boundaries are not summed.
 
-Every historical metric uses one watermark: the minimum latest closed label across the cohort. The headline uses the 30 labels ending at that watermark. Charts use the trailing 184 closed labels plus the current open day when the complete cohort shares it. The collector retains 185 daily labels so reports collected on different days can still cover six calendar months on the shared grid.
+Every historical metric uses one watermark: the minimum latest closed label across the cohort. The headline uses up to 30 labels ending at that watermark. Charts use the trailing 184 closed labels plus the current open day when the complete cohort shares it. The collector retains 185 daily labels so reports collected on different days can still cover six calendar months on the shared grid.
 
 If the complete cohort lacks 30 common closed labels, the rate is unavailable. If it lacks the chart window, both charts render the common history that exists rather than dropping contributors. Current totals remain available because they use the same named cohort's latest snapshots.
 
@@ -76,8 +76,8 @@ One borderless header menu exposes All Workspaces and every individual workspace
 
 The hero is one compact row with two equally weighted typographic metrics:
 
-1. Trailing 30-day source churn per day with a daily sparkline.
-2. Net source LOC over the trailing 30 closed days with a cumulative sparkline.
+1. Source churn per day over the trailing window with a daily sparkline.
+2. Net source LOC over the same window with a cumulative sparkline.
 
 The menu-bar item uses the same daily churn average as its primary value. The four metric columns show current source, code, tests, and docs totals.
 
@@ -125,8 +125,8 @@ Core tests must prove:
 - Aggregate current totals, rate, and charts use one identical contributor cohort and one named watermark.
 - Repository path overlap and mixed-timezone reports refuse aggregation with actionable conflicts.
 - Aggregate history uses one common closed grid and never drops a contributor to satisfy history.
-- Daily churn excludes docs and the current partial day, divides by 30, and becomes the menu value.
-- The rate aligns every contributor to one common through-date; pre-creation zeros remain valid calendar-day inactivity.
+- Daily churn excludes docs and the current partial day, divides by the days in its window, and becomes the menu value.
+- The rate aligns every contributor to one common through-date and starts no earlier than the cohort's first tracked day.
 - Individual and aggregate snapshots share the same metric semantics.
 - Chart aggregation preserves code, test, and documentation additions and removals as six independent series.
 - Collector arguments and the Python-to-Swift contract retain 185 daily labels for the six-month chart window.
