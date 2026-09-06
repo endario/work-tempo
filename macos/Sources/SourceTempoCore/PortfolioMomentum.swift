@@ -52,6 +52,17 @@ public struct ChartTimeline: Equatable, Sendable {
     public let docDeleted: [Int]
 }
 
+/// Today, when every contributing report shares it. Its churn is real but
+/// partial, so it is kept out of the headline rate and marked where it is drawn.
+public struct OpenDay: Equatable, Sendable {
+    public let label: String
+    public let added: Int
+    public let deleted: Int
+
+    public var churn: Int { added + deleted }
+    public var net: Int { added - deleted }
+}
+
 public struct MonthlyChurnPoint: Equatable, Sendable {
     public let label: String
     public let codeAdded: Int
@@ -64,6 +75,17 @@ public struct MonthlyChurnPoint: Equatable, Sendable {
 }
 
 public extension ChartTimeline {
+    /// Source only: documentation is counted separately everywhere else, and the
+    /// rate this sits beside excludes it.
+    var openDay: OpenDay? {
+        guard currentProgress != nil, let index = labels.indices.last else { return nil }
+        return OpenDay(
+            label: labels[index],
+            added: codeAdded[index] + testAdded[index],
+            deleted: codeDeleted[index] + testDeleted[index]
+        )
+    }
+
     var monthlyChurn: [MonthlyChurnPoint] {
         var accumulators: [MonthAccumulator] = []
         for index in labels.indices {

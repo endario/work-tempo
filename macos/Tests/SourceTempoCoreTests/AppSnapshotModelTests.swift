@@ -214,6 +214,43 @@ final class AppSnapshotModelTests: XCTestCase {
     private func generatedAt(_ report: ReportDocument) throws -> Date {
         try XCTUnwrap(ISO8601DateFormatter().date(from: report.generatedAt))
     }
+
+    // The sparklines read today off the snapshot, so both initializers have to
+    // publish it rather than leaving the timeline to be re-derived downstream.
+    func testBothSnapshotsPublishTheOpenDayFromTheirTimeline() throws {
+        let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
+        let data = try makeReportData(
+            dayCount: 200,
+            generatedDate: "2026-08-31",
+            codeAdded: Array(repeating: 3, count: 199) + [40],
+            testAdded: Array(repeating: 1, count: 199) + [2],
+            codeDeleted: Array(repeating: 1, count: 199) + [7],
+            testDeleted: Array(repeating: 1, count: 199) + [1],
+            docAdded: Array(repeating: 5, count: 199) + [500],
+            docDeleted: Array(repeating: 5, count: 199) + [500]
+        )
+        let report = try ReportDocument.decode(data: data)
+        let expected = OpenDay(label: "2026-08-31", added: 42, deleted: 8)
+
+        let individual = DashboardSnapshot(
+            workspace: workspace,
+            report: report,
+            refreshState: .idle,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(individual.openDay, expected)
+
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [workspace: report]
+        ).get()
+        let aggregate = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(aggregate.openDay, expected)
+    }
 }
 
 private extension ISO8601DateFormatter {
