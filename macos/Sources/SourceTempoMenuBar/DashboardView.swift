@@ -117,7 +117,6 @@ struct DashboardView: View {
         HStack(spacing: 0) {
             ForEach(Array(model.snapshot.metrics.enumerated()), id: \.element.id) { index, metric in
                 if index == 1 {
-                    // Source is the total; code, tests, and docs are its constituent metrics.
                     Rectangle()
                         .fill(Color.secondary.opacity(0.24))
                         .frame(width: 1.5, height: 40)
@@ -131,7 +130,7 @@ struct DashboardView: View {
                         .foregroundStyle(metricColor(metric.id))
                     Text(metric.label)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(metricColor(metric.id))
+                        .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -145,8 +144,12 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
-                    chartTitle("CUMULATIVE CHURN")
-                    CumulativeChurnChart(timeline: chart)
+                    HStack(alignment: .firstTextBaseline) {
+                        chartTitle("SOURCE LOC")
+                        Spacer()
+                        kindLegend
+                    }
+                    SourceVolumeChart(timeline: chart)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     chartTitle("MONTHLY CHURN")
@@ -203,21 +206,31 @@ struct DashboardView: View {
         .help(help)
     }
 
-    private var changeLegend: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            legend("Code +", swatch: TempoPalette.codeAdded, text: TempoPalette.code)
-            legend("Tests +", swatch: TempoPalette.testAdded, text: TempoPalette.tests)
-            legend("Code -", swatch: TempoPalette.codeDeleted, text: TempoPalette.code)
-            legend("Tests -", swatch: TempoPalette.testDeleted, text: TempoPalette.tests)
-            legend("Docs +", swatch: TempoPalette.docsAdded, text: TempoPalette.docs)
-            legend("Docs -", swatch: TempoPalette.docsDeleted, text: TempoPalette.docs)
+    private var kindLegend: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            legend("Code", swatch: TempoPalette.code)
+            legend("Tests", swatch: TempoPalette.tests)
+            legend("Docs", swatch: TempoPalette.docs)
         }
     }
 
-    private func legend(_ label: String, swatch: Color, text: Color) -> some View {
+    private var changeLegend: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            legend("Code +", swatch: TempoPalette.codeAdded)
+            legend("Code -", swatch: TempoPalette.codeDeleted)
+            legend("Tests +", swatch: TempoPalette.testAdded)
+            legend("Tests -", swatch: TempoPalette.testDeleted)
+            legend("Docs +", swatch: TempoPalette.docsAdded)
+            legend("Docs -", swatch: TempoPalette.docsDeleted)
+        }
+    }
+
+    // Identity rides the swatch; the label stays in text ink so caption-sized
+    // legend text is not asked to clear contrast on a series color.
+    private func legend(_ label: String, swatch: Color) -> some View {
         HStack(spacing: 4) {
             Circle().fill(swatch).frame(width: 6, height: 6)
-            Text(label).foregroundStyle(text)
+            Text(label).foregroundStyle(.secondary)
         }
         .font(.caption2)
     }

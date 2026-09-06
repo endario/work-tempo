@@ -58,6 +58,7 @@ public struct MomentumSummary: Equatable, Sendable {
     public let netGrowth: Int
     public let recentChurn: [Int]
     public let recentNetGrowth: [Int]
+    public let recentLabels: [String]
 
     public init(report: ReportDocument) {
         self.init(input: MomentumInput(report: report))
@@ -74,6 +75,7 @@ public struct MomentumSummary: Equatable, Sendable {
             : input.labels.count
         let currentStart = max(0, closedEnd - 30)
         recentChurn = Array(input.churn[currentStart..<closedEnd])
+        recentLabels = Array(input.labels[currentStart..<closedEnd])
         currentChurn = recentChurn.reduce(0, +)
         dailyChurn = Double(currentChurn) / 30.0
         var cumulativeGrowth = 0

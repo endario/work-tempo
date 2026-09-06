@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Source Tempo default to one overlap-safe All Workspaces dashboard with a trailing-30-day churn rate in the hero and menu bar, plus cumulative and monthly churn charts.
+**Goal:** Make Source Tempo default to one overlap-safe All Workspaces dashboard with a trailing-30-day churn rate in the hero and menu bar, plus source-volume and monthly-churn charts.
 
 **Architecture:** Decode the collector's complete report partitions, adapt individual reports and portfolio-aligned reports into one `MomentumInput`, and derive all metrics through `MomentumSummary`. Persist an explicit display scope, schedule workspace refreshes as a bounded sequential queue, and keep aggregation in Swift so each workspace retains its own collector policy.
 
@@ -125,13 +125,13 @@
 - Modify: `macos/Tests/SourceTempoCoreTests/AppSnapshotModelTests.swift`
 
 **Interfaces:**
-- Produces: `MomentumHero`, `CumulativeChurnChart`, `MonthlyChurnChart`, one aggregate header menu, and queue progress.
+- Produces: `MomentumHero`, `SourceVolumeChart`, `MonthlyChurnChart`, one aggregate header menu, and queue progress.
 - Consumes: `DashboardSnapshot.dailyChurn`, `chartTimeline`, `scope`, and aggregate warning/error fields.
 
 - [ ] Add or update snapshot-model assertions for compact `/d` menu value, zero activity, aggregate notices, and extending-history states.
 - [ ] Make All Workspaces the default header selection and keep Remove disabled for it.
 - [ ] Present daily churn and trailing-30-day net LOC as equal hero metrics with Swift Charts sparklines.
-- [ ] Implement six-series cumulative and monthly change charts with code/tests above the axis, docs below it, and one shared legend.
+- [ ] Implement the stacked source-volume chart and the six-series monthly change chart with code/tests above the axis and docs below it.
 - [ ] Keep header/footer fixed and make the dashboard body scroll within 760 points.
 - [ ] Run complete Swift and Python suites, then build the debug preview and release app.
 - [ ] Capture aggregate and individual screenshots at 430 points, measure ink alignment and chart-pixel visibility, and correct any overlap or clipped labels.

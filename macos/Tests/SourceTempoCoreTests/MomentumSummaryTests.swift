@@ -22,6 +22,21 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.recentNetGrowth.last, 90)
     }
 
+    // The hero sparklines label each point by day, so a label has to name the
+    // same day whose churn sits beside it.
+    func testRecentLabelsNameTheDaysBehindTheRecentSeries() throws {
+        let report = try ReportDocument.decode(data: makeReportData(
+            generatedDate: "2026-08-31",
+            churn: Array(repeating: 1, count: 61)
+        ))
+
+        let summary = MomentumSummary(report: report)
+
+        XCTAssertEqual(summary.recentLabels.count, summary.recentChurn.count)
+        XCTAssertEqual(summary.recentLabels.last, "2026-08-30")
+        XCTAssertEqual(summary.recentLabels.first, "2026-08-01")
+    }
+
     func testUsesReportGeneratedDateInsteadOfCurrentDate() throws {
         let report = try ReportDocument.decode(data: makeReportData(
             generatedDate: "2026-08-31",

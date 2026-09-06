@@ -3,19 +3,25 @@ import Charts
 import SourceTempoCore
 import SwiftUI
 
+/// Steps are solved against `fillOpacity` composited over the popover's own
+/// window background, not against the raw hex.
 enum TempoPalette {
-    static let source = adaptive(light: 0x596276, dark: 0xB0B8CB)
-    static let code = adaptive(light: 0x466F5D, dark: 0x8DC3AA)
-    static let codeAdded = adaptive(light: 0x2F5D49, dark: 0xA7D4BE)
-    static let codeDeleted = adaptive(light: 0x7DA68F, dark: 0x557D69)
-    static let tests = adaptive(light: 0x596A9A, dark: 0xA6B3DD)
-    static let testAdded = adaptive(light: 0x364A82, dark: 0xB5C0EA)
-    static let testDeleted = adaptive(light: 0x8B9CCB, dark: 0x6474A8)
-    static let docs = adaptive(light: 0x845E78, dark: 0xD2A2C2)
-    static let docsAdded = adaptive(light: 0x61374F, dark: 0xD9AEC9)
-    static let docsDeleted = adaptive(light: 0xB187A3, dark: 0x966685)
-    static let positive = adaptive(light: 0x347048, dark: 0x8BCB98)
-    static let negative = adaptive(light: 0x934D50, dark: 0xE49B9E)
+    static let source = adaptive(light: 0x52514E, dark: 0xC3C2B7)
+    static let code = codeAdded
+    static let tests = testAdded
+    static let docs = docsAdded
+
+    static let codeAdded = adaptive(light: 0x2776D3, dark: 0x3D8BE9)
+    static let codeDeleted = adaptive(light: 0x0052AD, dark: 0x70B0FF)
+    static let testAdded = adaptive(light: 0xCF4E12, dark: 0xE46332)
+    static let testDeleted = adaptive(light: 0xA42C00, dark: 0xFF9168)
+    static let docsAdded = adaptive(light: 0x00875A, dark: 0x199E70)
+    static let docsDeleted = adaptive(light: 0x006140, dark: 0x4DC392)
+
+    static let fillOpacity = 0.85
+
+    static let positive = adaptive(light: 0x009300, dark: 0x0CA30C)
+    static let negative = adaptive(light: 0xD03B3B, dark: 0xE5504D)
 
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -35,128 +41,126 @@ enum TempoPalette {
     }
 }
 
-struct CumulativeChurnChart: View {
+struct SourceVolumeChart: View {
     let timeline: ChartTimeline
+
+    @State private var hovered: Int?
 
     var body: some View {
         Chart {
-            ForEach(cumulativeBands) { point in
+            ForEach(volumeBands) { band in
                 AreaMark(
-                    x: .value("Day", point.x),
-                    yStart: .value("Baseline", point.start),
-                    yEnd: .value("Lines", point.end),
-                    series: .value("Change", point.kind)
+                    x: .value("Day", band.x),
+                    yStart: .value("Baseline", band.start),
+                    yEnd: .value("Lines", band.end),
+                    series: .value("Kind", band.kind)
                 )
-                .foregroundStyle(point.color.opacity(0.88))
+                .foregroundStyle(band.color.opacity(TempoPalette.fillOpacity))
                 .interpolationMethod(.linear)
             }
 
+            // Documentation is a guide, not part of the source total: a soft
+            // wash under a dashed boundary, matching the HTML report.
+            ForEach(docsGuide) { point in
+                LineMark(
+                    x: .value("Day", point.x),
+                    y: .value("Lines", point.value),
+                    series: .value("Kind", "Docs guide")
+                )
+                .foregroundStyle(TempoPalette.docs)
+                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3], dashPhase: 0))
+                .interpolationMethod(.linear)
+            }
+
+            if let hovered {
+                RuleMark(x: .value("Day", timeline.pointPosition(at: hovered)))
+                    .foregroundStyle(Color.primary.opacity(0.3))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
+                ForEach(hoverMarkers(hovered)) { marker in
+                    PointMark(
+                        x: .value("Day", timeline.pointPosition(at: hovered)),
+                        y: .value("Lines", marker.value)
+                    )
+                    .symbolSize(46)
+                    .foregroundStyle(marker.color)
+                }
+            }
         }
-        .chartXAxis { chartXAxis }
-        .chartYAxis { chartYAxis }
+        .chartXAxis { AxisMarks(preset: .aligned, values: monthTickIndexes.map(Double.init)) { value in
+            AxisGridLine().foregroundStyle(.clear)
+            AxisValueLabel(anchor: .center, offsetsMarks: false) {
+                if let index = value.as(Double.self).map({ Int($0.rounded()) }),
+                   timeline.labels.indices.contains(index) {
+                    Text(monthAbbreviation(timeline.labels[index]))
+                }
+            }
+        } }
+        .chartYAxis { churnYAxis }
         .chartXScale(domain: -0.5...max(0.5, Double(timeline.labels.count) - 0.5))
         .chartYScale(domain: yDomain)
+        .chartOverlay { proxy in
+            ChartHoverLayer(
+                proxy: proxy,
+                hovered: $hovered,
+                resolve: timeline.nearestPointIndex(toX:),
+                xPosition: timeline.pointPosition(at:),
+                title: { dayTitle(timeline.labels[$0]) },
+                rows: hoverRows
+            )
+        }
         .frame(height: 116)
-        .accessibilityLabel("Cumulative code, test, and documentation additions and removals")
+        .accessibilityLabel("Code, test, and documentation lines over time")
     }
 
-    private var cumulativeBands: [CumulativeBandPoint] {
-        timeline.cumulativeChanges.flatMap { point in
-            let positiveTests = point.codeAdded + point.testAdded
-            let positiveCodeDeleted = positiveTests + point.codeDeleted
-            let positiveSource = positiveCodeDeleted + point.testDeleted
-            let x = xPosition(point.index)
+    private var volumeBands: [VolumeBand] {
+        timeline.labels.indices.flatMap { index -> [VolumeBand] in
+            let x = timeline.pointPosition(at: index)
+            let code = timeline.codeLoc[index]
+            let tests = timeline.testLoc[index]
             return [
-                CumulativeBandPoint(
-                    id: "code-added-\(point.index)",
-                    kind: "Code +",
-                    x: x,
-                    start: 0,
-                    end: point.codeAdded,
-                    color: TempoPalette.codeAdded
-                ),
-                CumulativeBandPoint(
-                    id: "tests-added-\(point.index)",
-                    kind: "Tests +",
-                    x: x,
-                    start: point.codeAdded,
-                    end: positiveTests,
-                    color: TempoPalette.testAdded
-                ),
-                CumulativeBandPoint(
-                    id: "code-deleted-\(point.index)",
-                    kind: "Code -",
-                    x: x,
-                    start: positiveTests,
-                    end: positiveCodeDeleted,
-                    color: TempoPalette.codeDeleted
-                ),
-                CumulativeBandPoint(
-                    id: "tests-deleted-\(point.index)",
-                    kind: "Tests -",
-                    x: x,
-                    start: positiveCodeDeleted,
-                    end: positiveSource,
-                    color: TempoPalette.testDeleted
-                ),
-                CumulativeBandPoint(
-                    id: "docs-added-\(point.index)",
-                    kind: "Docs +",
-                    x: x,
-                    start: 0,
-                    end: -point.docAdded,
-                    color: TempoPalette.docsAdded
-                ),
-                CumulativeBandPoint(
-                    id: "docs-deleted-\(point.index)",
-                    kind: "Docs -",
-                    x: x,
-                    start: -point.docAdded,
-                    end: -(point.docAdded + point.docDeleted),
-                    color: TempoPalette.docsDeleted
-                ),
+                VolumeBand(id: "code-\(index)", kind: "Code", x: x, start: 0, end: code, color: TempoPalette.code),
+                VolumeBand(id: "tests-\(index)", kind: "Tests", x: x, start: code, end: code + tests, color: TempoPalette.tests),
+                VolumeBand(id: "docs-\(index)", kind: "Docs", x: x, start: 0, end: -timeline.docLoc[index], color: TempoPalette.docs),
             ]
         }
     }
 
+    private var docsGuide: [GuidePoint] {
+        guard timeline.docLoc.contains(where: { $0 > 0 }) else { return [] }
+        return timeline.labels.indices.map {
+            GuidePoint(id: $0, x: timeline.pointPosition(at: $0), value: -timeline.docLoc[$0])
+        }
+    }
+
+    private func hoverMarkers(_ index: Int) -> [HoverMarker] {
+        let code = timeline.codeLoc[index]
+        let tests = timeline.testLoc[index]
+        let docs = timeline.docLoc[index]
+        var markers = [
+            HoverMarker(id: "code", value: code, color: TempoPalette.code),
+            HoverMarker(id: "tests", value: code + tests, color: TempoPalette.tests),
+        ]
+        if docs > 0 {
+            markers.append(HoverMarker(id: "docs", value: -docs, color: TempoPalette.docs))
+        }
+        return markers
+    }
+
+    private func hoverRows(_ index: Int) -> [HoverRow] {
+        let code = timeline.codeLoc[index]
+        let tests = timeline.testLoc[index]
+        return [
+            HoverRow(id: "source", label: "Source", value: MetricFormatter.compact(code + tests), color: nil),
+            HoverRow(id: "code", label: "Code", value: MetricFormatter.compact(code), color: TempoPalette.code),
+            HoverRow(id: "tests", label: "Tests", value: MetricFormatter.compact(tests), color: TempoPalette.tests),
+            HoverRow(id: "docs", label: "Docs", value: MetricFormatter.compact(timeline.docLoc[index]), color: TempoPalette.docs),
+        ]
+    }
+
     private var yDomain: ClosedRange<Double> {
-        let points = timeline.cumulativeChanges
-        let positive = points.map { $0.codeAdded + $0.testAdded + $0.codeDeleted + $0.testDeleted }.max() ?? 0
-        let negative = points.map { $0.docAdded + $0.docDeleted }.max() ?? 0
-        return bufferedDomain(positive: positive, negative: negative)
-    }
-
-    private func xPosition(_ index: Int) -> Double {
-        guard index == timeline.labels.count - 1,
-              let progress = timeline.currentProgress,
-              index > 0 else { return Double(index) }
-        return Double(index - 1) + progress
-    }
-
-    private var chartXAxis: some AxisContent {
-        AxisMarks(preset: .aligned, values: monthTickIndexes.map(Double.init)) { value in
-            AxisGridLine().foregroundStyle(.clear)
-            AxisValueLabel(anchor: .center, offsetsMarks: false) {
-                if let raw = value.as(Double.self) {
-                    let index = Int(raw.rounded())
-                    if timeline.labels.indices.contains(index) {
-                        Text(monthAbbreviation(timeline.labels[index]))
-                    }
-                }
-            }
-        }
-    }
-
-    private var chartYAxis: some AxisContent {
-        AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-            AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
-            AxisValueLabel {
-                if let count = value.as(Int.self) {
-                    Text(MetricFormatter.compact(count))
-                        .frame(width: 38, alignment: .trailing)
-                }
-            }
-        }
+        let positive = zip(timeline.codeLoc, timeline.testLoc).map(+).max() ?? 0
+        return bufferedDomain(positive: positive, negative: timeline.docLoc.max() ?? 0)
     }
 
     private var monthTickIndexes: [Int] {
@@ -178,12 +182,24 @@ struct CumulativeChurnChart: View {
 struct MonthlyChurnChart: View {
     let timeline: ChartTimeline
 
+    @State private var hovered: Int?
+
     private var months: [MonthlyChurnPoint] {
         timeline.monthlyChurn
     }
 
     var body: some View {
         Chart {
+            if let hovered, months.indices.contains(hovered) {
+                RectangleMark(
+                    xStart: .value("Bar start", Double(hovered) - 0.42),
+                    xEnd: .value("Bar end", Double(hovered) + 0.42),
+                    yStart: .value("Removals", yDomain.lowerBound),
+                    yEnd: .value("Additions", yDomain.upperBound)
+                )
+                .foregroundStyle(Color.primary.opacity(0.08))
+            }
+
             if let current = currentTrack {
                 RectangleMark(
                     xStart: .value("Unelapsed start", current.filledEnd),
@@ -201,47 +217,63 @@ struct MonthlyChurnChart: View {
                     yStart: .value("Stack start", segment.startY),
                     yEnd: .value("Stack end", segment.endY)
                 )
-                .foregroundStyle(segment.color)
+                .foregroundStyle(segment.color.opacity(TempoPalette.fillOpacity))
             }
 
+            if let hovered {
+                RuleMark(x: .value("Month", Double(hovered)))
+                    .foregroundStyle(Color.primary.opacity(0.3))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
         }
         .chartXAxis {
             AxisMarks(preset: .aligned, values: months.indices.map(Double.init)) { value in
                 AxisGridLine().foregroundStyle(.clear)
                 AxisValueLabel(anchor: .center, offsetsMarks: false) {
-                    if let raw = value.as(Double.self) {
-                        let index = Int(raw.rounded())
-                        if months.indices.contains(index) {
-                            Text(monthAbbreviation(months[index].label))
-                        }
+                    if let index = value.as(Double.self).map({ Int($0.rounded()) }),
+                       months.indices.contains(index) {
+                        Text(monthAbbreviation(months[index].label))
                     }
                 }
             }
         }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
-                AxisValueLabel {
-                    if let count = value.as(Int.self) {
-                        Text(MetricFormatter.compact(count))
-                            .frame(width: 38, alignment: .trailing)
-                    }
-                }
-            }
-        }
+        .chartYAxis { churnYAxis }
         .chartXScale(domain: -0.5...max(0.5, Double(months.count) - 0.5))
         .chartYScale(domain: yDomain)
+        .chartOverlay { proxy in
+            ChartHoverLayer(
+                proxy: proxy,
+                hovered: $hovered,
+                resolve: { x in
+                    let count = months.count
+                    guard count > 0 else { return nil }
+                    return min(count - 1, max(0, Int(x.rounded())))
+                },
+                xPosition: Double.init,
+                title: { monthTitle(months[$0].label) },
+                rows: hoverRows
+            )
+        }
         .frame(height: 116)
         .accessibilityLabel("Monthly code, test, and documentation additions and removals")
+    }
+
+    private func hoverRows(_ index: Int) -> [HoverRow] {
+        let month = months[index]
+        return [
+            HoverRow(id: "code-added", label: "Code +", value: MetricFormatter.compact(month.codeAdded), color: TempoPalette.codeAdded),
+            HoverRow(id: "code-deleted", label: "Code -", value: MetricFormatter.compact(month.codeDeleted), color: TempoPalette.codeDeleted),
+            HoverRow(id: "test-added", label: "Tests +", value: MetricFormatter.compact(month.testAdded), color: TempoPalette.testAdded),
+            HoverRow(id: "test-deleted", label: "Tests -", value: MetricFormatter.compact(month.testDeleted), color: TempoPalette.testDeleted),
+            HoverRow(id: "docs-added", label: "Docs +", value: MetricFormatter.compact(month.docAdded), color: TempoPalette.docsAdded),
+            HoverRow(id: "docs-deleted", label: "Docs -", value: MetricFormatter.compact(month.docDeleted), color: TempoPalette.docsDeleted),
+        ]
     }
 
     private var yDomain: ClosedRange<Double> {
         let positive = months.map { $0.codeAdded + $0.testAdded + $0.codeDeleted + $0.testDeleted }.max() ?? 0
         let negative = months.map { $0.docAdded + $0.docDeleted }.max() ?? 0
-        return bufferedDomain(
-            positive: positive,
-            negative: negative
-        )
+        return bufferedDomain(positive: positive, negative: negative)
     }
 
     private var churnSegments: [ChurnSegment] {
@@ -306,16 +338,179 @@ struct MonthlyChurnChart: View {
               let progress = months[index].currentProgress else { return (start, end) }
         return (start, start + (end - start) * progress)
     }
-
 }
 
+// MARK: - Hover
+
+struct HoverRow: Identifiable {
+    let id: String
+    let label: String
+    let value: String
+    let color: Color?
+}
+
+private struct HoverMarker: Identifiable {
+    let id: String
+    let value: Int
+    let color: Color
+}
+
+private struct ChartHoverLayer: View {
+    let proxy: ChartProxy
+    @Binding var hovered: Int?
+    let resolve: (Double) -> Int?
+    let xPosition: (Int) -> Double
+    let title: (Int) -> String
+    let rows: (Int) -> [HoverRow]
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        guard case let .active(point) = phase else {
+                            hovered = nil
+                            return
+                        }
+                        hovered = index(at: point, in: geometry)
+                    }
+
+                if let hovered {
+                    ChartReadout(title: title(hovered), rows: rows(hovered))
+                        .offset(x: readoutX(for: hovered, in: geometry), y: 0)
+                }
+            }
+        }
+    }
+
+    private func index(at point: CGPoint, in geometry: GeometryProxy) -> Int? {
+        guard let anchor = proxy.plotFrame else { return nil }
+        let plot = geometry[anchor]
+        guard plot.contains(point),
+              let raw = proxy.value(atX: point.x - plot.minX, as: Double.self) else { return nil }
+        return resolve(raw)
+    }
+
+    private func readoutX(for index: Int, in geometry: GeometryProxy) -> CGFloat {
+        guard let anchor = proxy.plotFrame,
+              let position = proxy.position(forX: xPosition(index)) else { return 0 }
+        let cursor = geometry[anchor].minX + position
+        let width = ChartReadout.width
+        let trailing = cursor + 12
+        let leading = cursor - width - 12
+        if trailing + width <= geometry.size.width { return trailing }
+        return max(0, leading)
+    }
+}
+
+struct ChartReadout: View {
+    static let width: CGFloat = 132
+    static let compactWidth: CGFloat = 120
+
+    let title: String
+    let rows: [HoverRow]
+    var compact = false
+
+    var body: some View {
+        if compact {
+            compactBody
+        } else {
+            stackedBody
+        }
+    }
+
+    private var compactBody: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Spacer(minLength: 4)
+            if let color = rows.first?.color {
+                Circle().fill(color).frame(width: 6, height: 6)
+            }
+            Text(rows.first?.value ?? "")
+                .fontWeight(.semibold)
+                .monospacedDigit()
+        }
+        .font(.caption2)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .frame(width: Self.compactWidth, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.12)))
+        .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
+        .allowsHitTesting(false)
+    }
+
+    private var stackedBody: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 1)
+            ForEach(rows) { row in
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(row.color ?? .clear)
+                        .frame(width: 7, height: 7)
+                    Text(row.label)
+                        .foregroundStyle(row.color == nil ? .secondary : .primary)
+                    Spacer(minLength: 8)
+                    Text(row.value)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .font(.caption2)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(width: Self.width, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
+        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Shared chart chrome
+
+private var churnYAxis: some AxisContent {
+    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.12))
+        AxisValueLabel {
+            if let count = value.as(Int.self) {
+                Text(MetricFormatter.compact(count))
+                    .frame(width: 38, alignment: .trailing)
+            }
+        }
+    }
+}
+
+let monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
 private func monthAbbreviation(_ label: String) -> String {
-    let names = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
     let parts = label.split(separator: "-")
     guard parts.count >= 2,
           let month = Int(parts[1]),
-          names.indices.contains(month - 1) else { return label }
-    return names[month - 1]
+          monthNames.indices.contains(month - 1) else { return label }
+    return monthNames[month - 1]
+}
+
+func dayTitle(_ label: String) -> String {
+    let parts = label.split(separator: "-")
+    guard parts.count == 3, let month = Int(parts[1]), let day = Int(parts[2]),
+          monthNames.indices.contains(month - 1) else { return label }
+    return "\(monthNames[month - 1]) \(day)"
+}
+
+private func monthTitle(_ label: String) -> String {
+    let parts = label.split(separator: "-")
+    guard parts.count >= 2, let month = Int(parts[1]),
+          monthNames.indices.contains(month - 1) else { return label }
+    return "\(monthNames[month - 1]) \(parts[0])"
 }
 
 private func bufferedDomain(positive: Int, negative: Int) -> ClosedRange<Double> {
@@ -324,7 +519,13 @@ private func bufferedDomain(positive: Int, negative: Int) -> ClosedRange<Double>
     return lower...upper
 }
 
-private struct CumulativeBandPoint: Identifiable {
+private struct GuidePoint: Identifiable {
+    let id: Int
+    let x: Double
+    let value: Int
+}
+
+private struct VolumeBand: Identifiable {
     let id: String
     let kind: String
     let x: Double

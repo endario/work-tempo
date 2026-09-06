@@ -4,7 +4,7 @@
 
 ## Goal
 
-Make Source Tempo open on an honest portfolio-wide view of every tracked Git workspace. The primary tracker becomes source churn per day over the trailing 30 closed days. The dashboard shows cumulative churn across six months and six calendar months of monthly churn. Individual workspace inspection remains available.
+Make Source Tempo open on an honest portfolio-wide view of every tracked Git workspace. The primary tracker becomes source churn per day over the trailing 30 closed days. The dashboard shows day-end source lines across six months and six calendar months of monthly churn. Individual workspace inspection remains available.
 
 ## Metric Contract
 
@@ -83,12 +83,14 @@ The menu-bar item uses the same daily churn average as its primary value. The fo
 
 The dashboard carries both original analytical views:
 
-1. **Cumulative Churn** accumulates code and test additions and removals above the axis across the six-month window. Documentation additions and removals accumulate below the axis and remain informational.
+1. **Source LOC** stacks day-end code and test lines above the axis across the six-month window. Documentation lines sit below the axis under a dashed guide and remain informational. It stacks by kind rather than by language because the collector contract carries no per-language series.
 2. **Monthly Churn** shows the same six series by calendar month. Code and test activity remains above the axis; documentation remains below it and is excluded from the headline rate.
 
-An individual chart appends the current open day after the closed-day window. An aggregate chart appends it only when every contributor has that same open label; otherwise it remains stable through the common closed-day watermark. The open day's cumulative point uses elapsed-day positioning. The current monthly churn bar keeps its full month-width slot while filling only the elapsed fraction; the unelapsed remainder is a neutral track. The current open day is visible in charts but excluded from headline calculations.
+An individual chart appends the current open day after the closed-day window. An aggregate chart appends it only when every contributor has that same open label; otherwise it remains stable through the common closed-day watermark. The open day's snapshot point uses elapsed-day positioning. The current monthly churn bar keeps its full month-width slot while filling only the elapsed fraction; the unelapsed remainder is a neutral track. The current open day is visible in charts but excluded from headline calculations.
 
-The matte macaron palette assigns stable semantic colors to source, code, tests, and docs across hero text, totals, charts, and the one shared legend. Added and removed activity use related tones within each family. Both charts retain compact date ticks, accessible series descriptions, and chart-specific empty states. The 430-point popover keeps both charts in its initial view with a fixed header and footer.
+Hue names the kind and lightness names the direction. Each step clears 3:1 against the window background it is composited over.
+
+Every sparkline and chart answers the pointer. Both charts retain compact date ticks, accessible series descriptions, and chart-specific empty states. The 430-point popover keeps both charts in its initial view with a fixed header and footer.
 
 ## Error And Empty States
 

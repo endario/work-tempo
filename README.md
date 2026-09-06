@@ -171,7 +171,7 @@ scripts/build-macos-app.sh --install
 open /Applications/SourceTempo.app
 ```
 
-Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Cumulative Churn and Monthly Churn share one six-series legend: code and test additions and removals are above the axis, while informational documentation additions and removals are below it.
+Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Both charts keep code and test activity above the axis and informational documentation below it.
 
 The app renders saved reports immediately. Collection is sequential, skips unattended work in Low Power Mode, uses two workers, and checkpoints the collector cache so an interrupted history extension can resume.
 
