@@ -245,4 +245,27 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(open.net, 34)
         XCTAssertNil(timeline(progress: nil).openDay)
     }
+
+    func testAggregateRateStartsAtTheCohortsFirstTrackedDay() throws {
+        let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/young"))
+        let idle = Array(repeating: 0, count: 195)
+        let report = try ReportDocument.decode(data: makeReportData(
+            dayCount: 200,
+            generatedDate: "2026-08-31",
+            loc: idle + [100, 100, 100, 100] + [100],
+            churn: idle + [20, 20, 20, 20] + [99_999],
+            added: idle + [20, 20, 20, 20] + [99_999],
+            deleted: idle + [0, 0, 0, 0] + [99_999]
+        ))
+
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [workspace: report]
+        ).get()
+        let summary = try XCTUnwrap(portfolio.momentum?.summary)
+
+        XCTAssertEqual(summary.windowDays, 4)
+        XCTAssertEqual(summary.dailyChurn, 20, accuracy: 0.000_001)
+    }
+
 }

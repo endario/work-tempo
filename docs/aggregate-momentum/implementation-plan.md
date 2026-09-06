@@ -33,7 +33,7 @@
 - Produces: `MomentumInput`, `MomentumSummary.init(input:)`, `MomentumSummary.init(report:)`, and `dailyChurn`.
 - Preserves: existing net-growth and current/previous churn semantics except that the daily average becomes explicit.
 
-- [ ] Add failing tests proving `dailyChurn == currentChurn / 30`, the open day is excluded, pre-creation zeros remain calendar inactivity, and report/input initializers agree.
+- [ ] Add failing tests proving `dailyChurn == currentChurn / windowDays`, the open day is excluded, the window starts at the first tracked day, and report/input initializers agree.
 - [ ] Run `swift test --package-path macos --filter MomentumSummaryTests` and confirm the new assertions fail.
 - [ ] Add `MomentumInput` with aligned labels, generated date, LOC/kind/churn arrays, and make `init(report:)` only adapt report data before forwarding to `init(input:)`.
 - [ ] Run the focused tests and the complete Swift suite.

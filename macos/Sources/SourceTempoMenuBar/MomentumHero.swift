@@ -21,7 +21,7 @@ struct MomentumHero: View {
                         HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
                     ]
                 },
-                help: "Trailing 30-day source churn, averaged per day"
+                help: "Source churn over the last \(snapshot.windowDays) closed days, averaged per day"
             )
 
             Divider()
@@ -29,7 +29,7 @@ struct MomentumHero: View {
 
             metric(
                 value: snapshot.hasMomentum ? signed(snapshot.netGrowth) : "--",
-                unit: "/ 30D",
+                unit: "/ \(snapshot.windowDays)D",
                 color: snapshot.netGrowth >= 0 ? TempoPalette.positive : TempoPalette.negative,
                 trend: runningNet,
                 readout: { index in
@@ -42,7 +42,7 @@ struct MomentumHero: View {
                         HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true),
                     ]
                 },
-                help: "Net source LOC added over the trailing 30 closed days"
+                help: "Net source LOC added over the last \(snapshot.windowDays) closed days"
             )
         }
     }

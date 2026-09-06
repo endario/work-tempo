@@ -47,6 +47,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let recentDeleted: [Int]
     public let chartTimeline: ChartTimeline?
     public let openDay: OpenDay?
+    public let windowDays: Int
     public let historyMessage: String?
 
     public init(
@@ -81,6 +82,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             recentDeleted = []
             chartTimeline = nil
             openDay = nil
+            windowDays = 30
             historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
             menuAccessibilityLabel = "Source Tempo, \(workspaceName), no report yet\(status)"
@@ -112,6 +114,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentLabels = summary.recentLabels
         recentAdded = summary.recentAdded
         recentDeleted = summary.recentDeleted
+        windowDays = summary.windowDays
         let timeline = PortfolioMomentum.chart(for: report)
         chartTimeline = timeline
         openDay = timeline?.openDay
@@ -172,6 +175,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentLabels = summary?.recentLabels ?? []
         recentAdded = summary?.recentAdded ?? []
         recentDeleted = summary?.recentDeleted ?? []
+        windowDays = summary?.windowDays ?? 30
         chartTimeline = portfolio.chart
         openDay = portfolio.chart?.openDay
         if case let .extending(current, required) = portfolio.historyState {

@@ -61,6 +61,7 @@ public struct MomentumSummary: Equatable, Sendable {
     public let recentLabels: [String]
     public let recentAdded: [Int]
     public let recentDeleted: [Int]
+    public let windowDays: Int
 
     public init(report: ReportDocument) {
         self.init(input: MomentumInput(report: report))
@@ -75,13 +76,17 @@ public struct MomentumSummary: Equatable, Sendable {
         let closedEnd = input.labels.last == input.generatedDate
             ? max(0, input.labels.count - 1)
             : input.labels.count
-        let currentStart = max(0, closedEnd - 30)
+        // Churn as well as lines: a first day that adds source and deletes it
+        // again ends at zero LOC but is a day the workspace was worked on.
+        let firstTrackedDay = (0..<closedEnd).first { input.loc[$0] > 0 || input.churn[$0] > 0 } ?? 0
+        let currentStart = max(firstTrackedDay, max(0, closedEnd - 30))
+        windowDays = max(1, closedEnd - currentStart)
         recentChurn = Array(input.churn[currentStart..<closedEnd])
         recentLabels = Array(input.labels[currentStart..<closedEnd])
         recentAdded = Array(input.added[currentStart..<closedEnd])
         recentDeleted = Array(input.deleted[currentStart..<closedEnd])
         currentChurn = recentChurn.reduce(0, +)
-        dailyChurn = Double(currentChurn) / 30.0
+        dailyChurn = Double(currentChurn) / Double(windowDays)
         var cumulativeGrowth = 0
         recentNetGrowth = zip(
             input.added[currentStart..<closedEnd],
