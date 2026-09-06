@@ -65,6 +65,10 @@ struct MomentumHero: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+            // What the figure means belongs to the figure. Over the plot the
+            // pointer already gets that day's values, and two tooltips at once
+            // is one too many.
+            .help(help)
             HeroSparkline(
                 values: trend,
                 labels: dayLabels,
@@ -74,7 +78,6 @@ struct MomentumHero: View {
             )
         }
         .frame(maxWidth: .infinity)
-        .help(help)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(value) \(help)")
     }
