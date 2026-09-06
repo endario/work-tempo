@@ -754,6 +754,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertEqual(document["series"]["locByKind"]["code"], [2])
             self.assertEqual(document["series"]["locByKind"]["test"], [1])
             self.assertEqual(document["series"]["docLoc"], [3])
+            # The churn the menu-bar rate consumes sums both source kinds and
+            # leaves documentation to its own series.
+            self.assertEqual(document["series"]["churnByKind"]["code"], [2])
+            self.assertEqual(document["series"]["churnByKind"]["test"], [1])
+            self.assertEqual(document["series"]["churn"], [3])
+            self.assertEqual(document["series"]["docChurn"], [3])
             self.assertEqual(html_data["loc"], document["series"]["loc"])
             self.assertEqual(html_data["docLoc"], document["series"]["docLoc"])
             terminal_row = next(

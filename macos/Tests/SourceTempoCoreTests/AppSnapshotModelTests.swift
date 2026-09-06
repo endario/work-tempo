@@ -62,7 +62,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .ready)
         XCTAssertEqual(snapshot.menuValue, "10/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 10 source lines changed per day")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 10 code and test lines changed per day")
         XCTAssertEqual(snapshot.metrics.map(\.value), ["12K", "8K", "4.3K", "900"])
         XCTAssertTrue(snapshot.hasMomentum)
         XCTAssertEqual(snapshot.recentChurn.count, 30)
@@ -83,7 +83,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertTrue(refreshing.isRefreshing)
         XCTAssertEqual(refreshing.dataState, .ready)
         XCTAssertEqual(refreshing.menuValue, "2/d")
-        XCTAssertEqual(refreshing.menuAccessibilityLabel, "Source Tempo, Fixture, 2 source lines changed per day, refreshing")
+        XCTAssertEqual(refreshing.menuAccessibilityLabel, "Source Tempo, Fixture, 2 code and test lines changed per day, refreshing")
 
         let failed = DashboardSnapshot(
             workspace: workspace,
@@ -107,7 +107,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .stale)
         XCTAssertEqual(snapshot.menuValue, "2/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 2 source lines changed per day, stale")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 2 code and test lines changed per day, stale")
     }
 
     func testFractionalCollectorTimestampDoesNotForceFreshReportStale() throws {
@@ -251,6 +251,30 @@ final class AppSnapshotModelTests: XCTestCase {
         )
         XCTAssertEqual(aggregate.openDay, expected)
     }
+
+    func testAggregateAccessibilityLabelStatesTheRateOnceWithItsUnit() throws {
+        let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
+        let report = try ReportDocument.decode(data: makeReportData(
+            churn: Array(repeating: 10, count: 60) + [99_999]
+        ))
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [workspace: report]
+        ).get()
+
+        let snapshot = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(snapshot.menuValue, "10/d")
+        XCTAssertEqual(
+            snapshot.menuAccessibilityLabel,
+            "Source Tempo, all workspaces, 10 code and test lines changed per day"
+        )
+    }
+
 }
 
 private extension ISO8601DateFormatter {

@@ -150,7 +150,7 @@ struct DashboardView: View {
                     HStack(alignment: .firstTextBaseline) {
                         chartTitle(
                             "SOURCE LOC",
-                            help: "Day-end code and test lines; documentation is counted separately, below the axis"
+                            help: "Day-end code and test lines stacked as source; documentation is counted separately, below the axis"
                         )
                         Spacer()
                         kindLegend
@@ -160,7 +160,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     chartTitle(
                         "MONTHLY CHURN",
-                        help: "Source lines added and removed per calendar month; documentation is counted separately, below the axis"
+                        help: "Code and test lines added and removed per calendar month; documentation is counted separately, below the axis"
                     )
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
