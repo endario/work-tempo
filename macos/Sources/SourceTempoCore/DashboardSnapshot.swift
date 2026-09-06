@@ -128,7 +128,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "Source Tempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) source lines changed per day\(menuStatus)"
+        menuAccessibilityLabel = "Source Tempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) code and test lines changed per day\(menuStatus)"
     }
 
     public init(
@@ -190,7 +190,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "Source Tempo, all workspaces, \(menuValue) source churn\(menuStatus)"
+        let rate = summary.map { MetricFormatter.compact($0.dailyChurn) } ?? "--"
+        menuAccessibilityLabel = "Source Tempo, all workspaces, \(rate) code and test lines changed per day\(menuStatus)"
     }
 
     private static let emptyMetrics = [

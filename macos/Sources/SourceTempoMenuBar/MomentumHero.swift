@@ -21,7 +21,7 @@ struct MomentumHero: View {
                         HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
                     ]
                 },
-                help: "Source churn over the last \(snapshot.windowDays) closed days, averaged per day"
+                help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
             )
 
             Divider()
@@ -42,7 +42,7 @@ struct MomentumHero: View {
                         HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true),
                     ]
                 },
-                help: "Net source LOC added over the last \(snapshot.windowDays) closed days"
+                help: "Code and test lines added minus removed over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
             )
         }
     }
