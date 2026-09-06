@@ -11,12 +11,14 @@ struct MomentumHero: View {
                 value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.dailyChurn) : "--",
                 unit: "/ DAY",
                 color: TempoPalette.source,
-                trend: snapshot.recentChurn,
+                trend: snapshot.recentChurn + (snapshot.openDay.map { [$0.churn] } ?? []),
                 readout: { index in
-                    [
-                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(snapshot.recentAdded[index])),
-                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(snapshot.recentDeleted[index])),
-                        HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(snapshot.recentChurn[index]), isTotal: true),
+                    let added = self.added(at: index)
+                    let removed = self.removed(at: index)
+                    return [
+                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added)),
+                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
+                        HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
                     ]
                 },
                 help: "Trailing 30-day source churn, averaged per day"
@@ -29,15 +31,15 @@ struct MomentumHero: View {
                 value: snapshot.hasMomentum ? signed(snapshot.netGrowth) : "--",
                 unit: "/ 30D",
                 color: snapshot.netGrowth >= 0 ? TempoPalette.positive : TempoPalette.negative,
-                trend: snapshot.recentNetGrowth,
+                trend: runningNet,
                 readout: { index in
-                    let added = snapshot.recentAdded[index]
-                    let removed = snapshot.recentDeleted[index]
+                    let added = self.added(at: index)
+                    let removed = self.removed(at: index)
                     return [
                         HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added)),
                         HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                         HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
-                        HoverRow(id: "running", label: "Running", value: signed(snapshot.recentNetGrowth[index]), isTotal: true),
+                        HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true),
                     ]
                 },
                 help: "Net source LOC added over the trailing 30 closed days"
@@ -65,7 +67,8 @@ struct MomentumHero: View {
             }
             HeroSparkline(
                 values: trend,
-                labels: snapshot.recentLabels,
+                labels: dayLabels,
+                openIndex: openIndex,
                 readout: readout,
                 color: color
             )
@@ -76,6 +79,31 @@ struct MomentumHero: View {
         .accessibilityLabel("\(value) \(help)")
     }
 
+    /// The open day extends both sparklines by one point. It stays out of the
+    /// headline figures above them, which count closed days only.
+    private var openIndex: Int? {
+        snapshot.openDay == nil ? nil : snapshot.recentChurn.count
+    }
+
+    private var runningNet: [Int] {
+        guard let open = snapshot.openDay, let last = snapshot.recentNetGrowth.last else {
+            return snapshot.recentNetGrowth
+        }
+        return snapshot.recentNetGrowth + [last + open.net]
+    }
+
+    private var dayLabels: [String] {
+        snapshot.recentLabels + (snapshot.openDay.map { [$0.label] } ?? [])
+    }
+
+    private func added(at index: Int) -> Int {
+        index == openIndex ? (snapshot.openDay?.added ?? 0) : snapshot.recentAdded[index]
+    }
+
+    private func removed(at index: Int) -> Int {
+        index == openIndex ? (snapshot.openDay?.deleted ?? 0) : snapshot.recentDeleted[index]
+    }
+
     private func signed(_ value: Int) -> String {
         value > 0 ? "+\(MetricFormatter.compact(value))" : MetricFormatter.compact(value)
     }
@@ -84,6 +112,7 @@ struct MomentumHero: View {
 private struct HeroSparkline: View {
     let values: [Int]
     let labels: [String]
+    let openIndex: Int?
     let readout: (Int) -> [HoverRow]
     let color: Color
 
@@ -91,13 +120,26 @@ private struct HeroSparkline: View {
 
     var body: some View {
         Chart {
-            ForEach(points) { point in
+            ForEach(closedPoints) { point in
                 LineMark(
                     x: .value("Day", point.index),
-                    y: .value("Value", point.value)
+                    y: .value("Value", point.value),
+                    series: .value("Part", "closed")
                 )
                 .foregroundStyle(color.opacity(0.9))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+
+            // Today is real but partial, so it trails off rather than reading as
+            // a finished day beside the closed ones.
+            ForEach(openPoints) { point in
+                LineMark(
+                    x: .value("Day", point.index),
+                    y: .value("Value", point.value),
+                    series: .value("Part", "open")
+                )
+                .foregroundStyle(color.opacity(0.42))
+                .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [2.5, 2]))
             }
 
             if let hovered, points.indices.contains(hovered.index) {
@@ -109,7 +151,7 @@ private struct HeroSparkline: View {
                     y: .value("Value", points[hovered.index].value)
                 )
                 .symbolSize(34)
-                .foregroundStyle(color)
+                .foregroundStyle(hovered.index == openIndex ? color.opacity(0.55) : color)
             }
         }
         .chartXAxis(.hidden)
@@ -121,7 +163,7 @@ private struct HeroSparkline: View {
                 proxy: proxy,
                 count: points.count,
                 hovered: $hovered,
-                title: { labels.indices.contains($0) ? dayTitle(labels[$0]) : "Day \($0 + 1)" },
+                title: title,
                 rows: readout
             )
         }
@@ -131,6 +173,21 @@ private struct HeroSparkline: View {
 
     private var points: [HeroTrendPoint] {
         values.enumerated().map { HeroTrendPoint(index: $0.offset, value: $0.element) }
+    }
+
+    private var closedPoints: [HeroTrendPoint] {
+        guard let openIndex else { return points }
+        return points.filter { $0.index < openIndex }
+    }
+
+    private var openPoints: [HeroTrendPoint] {
+        guard let openIndex, openIndex > 0, points.indices.contains(openIndex) else { return [] }
+        return [points[openIndex - 1], points[openIndex]]
+    }
+
+    private func title(_ index: Int) -> String {
+        guard labels.indices.contains(index) else { return "Day \(index + 1)" }
+        return dayTitle(labels[index]) + (index == openIndex ? " \u{00B7} TO DATE" : "")
     }
 
     private var domain: ClosedRange<Double> {

@@ -218,4 +218,31 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(timeline.nearestPointIndex(toX: 1.2), 2)
         XCTAssertEqual(timeline.nearestPointIndex(toX: 0.9), 1)
     }
+
+    func testOpenDayReportsSourceChurnOnlyAndIsAbsentWithoutAnOpenLabel() throws {
+        func timeline(progress: Double?) -> ChartTimeline {
+            ChartTimeline(
+                labels: ["2026-08-01", "2026-08-02"],
+                closedDayCount: 1,
+                currentProgress: progress,
+                codeLoc: [1, 1],
+                testLoc: [1, 1],
+                docLoc: [1, 1],
+                codeAdded: [1, 40],
+                testAdded: [1, 2],
+                codeDeleted: [1, 7],
+                testDeleted: [1, 1],
+                docAdded: [1, 500],
+                docDeleted: [1, 500]
+            )
+        }
+
+        let open = try XCTUnwrap(timeline(progress: 0.5).openDay)
+        XCTAssertEqual(open.label, "2026-08-02")
+        XCTAssertEqual(open.added, 42)
+        XCTAssertEqual(open.deleted, 8)
+        XCTAssertEqual(open.churn, 50)
+        XCTAssertEqual(open.net, 34)
+        XCTAssertNil(timeline(progress: nil).openDay)
+    }
 }
