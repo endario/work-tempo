@@ -43,6 +43,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let recentChurn: [Int]
     public let recentNetGrowth: [Int]
     public let recentLabels: [String]
+    public let recentAdded: [Int]
+    public let recentDeleted: [Int]
     public let chartTimeline: ChartTimeline?
     public let historyMessage: String?
 
@@ -74,6 +76,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
             recentChurn = []
             recentNetGrowth = []
             recentLabels = []
+            recentAdded = []
+            recentDeleted = []
             chartTimeline = nil
             historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
@@ -104,6 +108,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentChurn = summary.recentChurn
         recentNetGrowth = summary.recentNetGrowth
         recentLabels = summary.recentLabels
+        recentAdded = summary.recentAdded
+        recentDeleted = summary.recentDeleted
         chartTimeline = PortfolioMomentum.chart(for: report)
         historyMessage = chartTimeline == nil
             ? "Extending history to \(HistoryWindow.chartClosedDays) days"
@@ -160,6 +166,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentChurn = summary?.recentChurn ?? []
         recentNetGrowth = summary?.recentNetGrowth ?? []
         recentLabels = summary?.recentLabels ?? []
+        recentAdded = summary?.recentAdded ?? []
+        recentDeleted = summary?.recentDeleted ?? []
         chartTimeline = portfolio.chart
         if case let .extending(current, required) = portfolio.historyState {
             historyMessage = "Extending history · \(current) of \(required) closed days"

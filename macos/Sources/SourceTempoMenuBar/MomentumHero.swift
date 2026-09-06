@@ -12,7 +12,13 @@ struct MomentumHero: View {
                 unit: "/ DAY",
                 color: TempoPalette.source,
                 trend: snapshot.recentChurn,
-                readoutLabel: "Churn",
+                readout: { index in
+                    [
+                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(snapshot.recentAdded[index])),
+                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(snapshot.recentDeleted[index])),
+                        HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(snapshot.recentChurn[index]), isTotal: true),
+                    ]
+                },
                 help: "Trailing 30-day source churn, averaged per day"
             )
 
@@ -24,7 +30,16 @@ struct MomentumHero: View {
                 unit: "/ 30D",
                 color: snapshot.netGrowth >= 0 ? TempoPalette.positive : TempoPalette.negative,
                 trend: snapshot.recentNetGrowth,
-                readoutLabel: "Net",
+                readout: { index in
+                    let added = snapshot.recentAdded[index]
+                    let removed = snapshot.recentDeleted[index]
+                    return [
+                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added)),
+                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
+                        HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
+                        HoverRow(id: "running", label: "Running", value: signed(snapshot.recentNetGrowth[index]), isTotal: true),
+                    ]
+                },
                 help: "Net source LOC added over the trailing 30 closed days"
             )
         }
@@ -35,7 +50,7 @@ struct MomentumHero: View {
         unit: String,
         color: Color,
         trend: [Int],
-        readoutLabel: String,
+        readout: @escaping (Int) -> [HoverRow],
         help: String
     ) -> some View {
         VStack(spacing: 3) {
@@ -51,7 +66,7 @@ struct MomentumHero: View {
             HeroSparkline(
                 values: trend,
                 labels: snapshot.recentLabels,
-                readoutLabel: readoutLabel,
+                readout: readout,
                 color: color
             )
         }
@@ -69,10 +84,10 @@ struct MomentumHero: View {
 private struct HeroSparkline: View {
     let values: [Int]
     let labels: [String]
-    let readoutLabel: String
+    let readout: (Int) -> [HoverRow]
     let color: Color
 
-    @State private var hovered: Int?
+    @State private var hovered: ChartHoverPoint?
 
     var body: some View {
         Chart {
@@ -85,13 +100,13 @@ private struct HeroSparkline: View {
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             }
 
-            if let hovered, points.indices.contains(hovered) {
-                RuleMark(x: .value("Day", hovered))
+            if let hovered, points.indices.contains(hovered.index) {
+                RuleMark(x: .value("Day", hovered.index))
                     .foregroundStyle(Color.primary.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 2]))
                 PointMark(
-                    x: .value("Day", hovered),
-                    y: .value("Value", points[hovered].value)
+                    x: .value("Day", hovered.index),
+                    y: .value("Value", points[hovered.index].value)
                 )
                 .symbolSize(34)
                 .foregroundStyle(color)
@@ -107,14 +122,7 @@ private struct HeroSparkline: View {
                 count: points.count,
                 hovered: $hovered,
                 title: { labels.indices.contains($0) ? dayTitle(labels[$0]) : "Day \($0 + 1)" },
-                rows: { index in
-                    [HoverRow(
-                        id: "value",
-                        label: readoutLabel,
-                        value: MetricFormatter.compact(values[index]),
-                        color: color
-                    )]
-                }
+                rows: readout
             )
         }
         .frame(height: 24)
@@ -142,7 +150,7 @@ private struct HeroTrendPoint: Identifiable {
 private struct SparklineHoverLayer: View {
     let proxy: ChartProxy
     let count: Int
-    @Binding var hovered: Int?
+    @Binding var hovered: ChartHoverPoint?
     let title: (Int) -> String
     let rows: (Int) -> [HoverRow]
 
@@ -163,22 +171,27 @@ private struct SparklineHoverLayer: View {
                         hovered = nil
                         return
                     }
-                    hovered = min(count - 1, max(0, Int(raw.rounded())))
+                    hovered = ChartHoverPoint(
+                        index: min(count - 1, max(0, Int(raw.rounded()))),
+                        cursorX: point.x
+                    )
                 }
                 .overlay(alignment: .topLeading) {
                     if let hovered {
-                        ChartReadout(title: title(hovered), rows: rows(hovered), compact: true)
-                            .offset(x: readoutX(for: hovered, in: geometry), y: 1)
+                        let card = ChartReadout(title: title(hovered.index), rows: rows(hovered.index))
+                        card.offset(
+                            x: ChartReadout.placement(
+                                besideCursor: hovered.cursorX,
+                                width: card.width,
+                                within: geometry.size.width
+                            ),
+                            // The sparkline is only 24 points tall, so the card
+                            // hangs below it rather than under the pointer.
+                            y: geometry.size.height + 6
+                        )
                     }
                 }
         }
     }
 
-    private func readoutX(for index: Int, in geometry: GeometryProxy) -> CGFloat {
-        guard let anchor = proxy.plotFrame,
-              let position = proxy.position(forX: Double(index)) else { return 0 }
-        let cursor = geometry[anchor].minX + position
-        let width = ChartReadout.compactWidth
-        return min(max(0, cursor - width / 2), max(0, geometry.size.width - width))
-    }
 }

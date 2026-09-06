@@ -44,7 +44,7 @@ enum TempoPalette {
 struct SourceVolumeChart: View {
     let timeline: ChartTimeline
 
-    @State private var hovered: Int?
+    @State private var hovered: ChartHoverPoint?
 
     var body: some View {
         Chart {
@@ -73,13 +73,13 @@ struct SourceVolumeChart: View {
             }
 
             if let hovered {
-                RuleMark(x: .value("Day", timeline.pointPosition(at: hovered)))
+                RuleMark(x: .value("Day", timeline.pointPosition(at: hovered.index)))
                     .foregroundStyle(Color.primary.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
-                ForEach(hoverMarkers(hovered)) { marker in
+                ForEach(hoverMarkers(hovered.index)) { marker in
                     PointMark(
-                        x: .value("Day", timeline.pointPosition(at: hovered)),
+                        x: .value("Day", timeline.pointPosition(at: hovered.index)),
                         y: .value("Lines", marker.value)
                     )
                     .symbolSize(46)
@@ -104,8 +104,8 @@ struct SourceVolumeChart: View {
                 proxy: proxy,
                 hovered: $hovered,
                 resolve: timeline.nearestPointIndex(toX:),
-                xPosition: timeline.pointPosition(at:),
                 title: { dayTitle(timeline.labels[$0]) },
+                columns: [],
                 rows: hoverRows
             )
         }
@@ -150,11 +150,12 @@ struct SourceVolumeChart: View {
     private func hoverRows(_ index: Int) -> [HoverRow] {
         let code = timeline.codeLoc[index]
         let tests = timeline.testLoc[index]
+        let docs = timeline.docLoc[index]
         return [
-            HoverRow(id: "source", label: "Source", value: MetricFormatter.compact(code + tests), color: nil),
-            HoverRow(id: "code", label: "Code", value: MetricFormatter.compact(code), color: TempoPalette.code),
-            HoverRow(id: "tests", label: "Tests", value: MetricFormatter.compact(tests), color: TempoPalette.tests),
-            HoverRow(id: "docs", label: "Docs", value: MetricFormatter.compact(timeline.docLoc[index]), color: TempoPalette.docs),
+            HoverRow(id: "code", label: "Code", value: MetricFormatter.compact(code), swatch: TempoPalette.code),
+            HoverRow(id: "tests", label: "Tests", value: MetricFormatter.compact(tests), swatch: TempoPalette.tests),
+            HoverRow(id: "source", label: "Source", value: MetricFormatter.compact(code + tests), isTotal: true),
+            HoverRow(id: "docs", label: "Docs", value: bracketed(docs), swatch: TempoPalette.docs),
         ]
     }
 
@@ -182,7 +183,7 @@ struct SourceVolumeChart: View {
 struct MonthlyChurnChart: View {
     let timeline: ChartTimeline
 
-    @State private var hovered: Int?
+    @State private var hovered: ChartHoverPoint?
 
     private var months: [MonthlyChurnPoint] {
         timeline.monthlyChurn
@@ -190,10 +191,10 @@ struct MonthlyChurnChart: View {
 
     var body: some View {
         Chart {
-            if let hovered, months.indices.contains(hovered) {
+            if let hovered, months.indices.contains(hovered.index) {
                 RectangleMark(
-                    xStart: .value("Bar start", Double(hovered) - 0.42),
-                    xEnd: .value("Bar end", Double(hovered) + 0.42),
+                    xStart: .value("Bar start", Double(hovered.index) - 0.42),
+                    xEnd: .value("Bar end", Double(hovered.index) + 0.42),
                     yStart: .value("Removals", yDomain.lowerBound),
                     yEnd: .value("Additions", yDomain.upperBound)
                 )
@@ -221,7 +222,7 @@ struct MonthlyChurnChart: View {
             }
 
             if let hovered {
-                RuleMark(x: .value("Month", Double(hovered)))
+                RuleMark(x: .value("Month", Double(hovered.index)))
                     .foregroundStyle(Color.primary.opacity(0.3))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
             }
@@ -249,8 +250,8 @@ struct MonthlyChurnChart: View {
                     guard count > 0 else { return nil }
                     return min(count - 1, max(0, Int(x.rounded())))
                 },
-                xPosition: Double.init,
                 title: { monthTitle(months[$0].label) },
+                columns: ["+", "\u{2212}"],
                 rows: hoverRows
             )
         }
@@ -261,12 +262,33 @@ struct MonthlyChurnChart: View {
     private func hoverRows(_ index: Int) -> [HoverRow] {
         let month = months[index]
         return [
-            HoverRow(id: "code-added", label: "Code +", value: MetricFormatter.compact(month.codeAdded), color: TempoPalette.codeAdded),
-            HoverRow(id: "code-deleted", label: "Code -", value: MetricFormatter.compact(month.codeDeleted), color: TempoPalette.codeDeleted),
-            HoverRow(id: "test-added", label: "Tests +", value: MetricFormatter.compact(month.testAdded), color: TempoPalette.testAdded),
-            HoverRow(id: "test-deleted", label: "Tests -", value: MetricFormatter.compact(month.testDeleted), color: TempoPalette.testDeleted),
-            HoverRow(id: "docs-added", label: "Docs +", value: MetricFormatter.compact(month.docAdded), color: TempoPalette.docsAdded),
-            HoverRow(id: "docs-deleted", label: "Docs -", value: MetricFormatter.compact(month.docDeleted), color: TempoPalette.docsDeleted),
+            HoverRow(
+                id: "code",
+                label: "Code",
+                values: [MetricFormatter.compact(month.codeAdded), MetricFormatter.compact(month.codeDeleted)],
+                swatches: [TempoPalette.codeAdded, TempoPalette.codeDeleted]
+            ),
+            HoverRow(
+                id: "tests",
+                label: "Tests",
+                values: [MetricFormatter.compact(month.testAdded), MetricFormatter.compact(month.testDeleted)],
+                swatches: [TempoPalette.testAdded, TempoPalette.testDeleted]
+            ),
+            HoverRow(
+                id: "source",
+                label: "Source",
+                values: [
+                    MetricFormatter.compact(month.codeAdded + month.testAdded),
+                    MetricFormatter.compact(month.codeDeleted + month.testDeleted),
+                ],
+                isTotal: true
+            ),
+            HoverRow(
+                id: "docs",
+                label: "Docs",
+                values: [bracketed(month.docAdded), bracketed(month.docDeleted)],
+                swatches: [TempoPalette.docsAdded, TempoPalette.docsDeleted]
+            ),
         ]
     }
 
@@ -345,8 +367,29 @@ struct MonthlyChurnChart: View {
 struct HoverRow: Identifiable {
     let id: String
     let label: String
-    let value: String
-    let color: Color?
+    let values: [String]
+    var swatches: [Color] = []
+    var isTotal = false
+
+    init(id: String, label: String, value: String, swatch: Color? = nil, isTotal: Bool = false) {
+        self.init(id: id, label: label, values: [value], swatches: swatch.map { [$0] } ?? [], isTotal: isTotal)
+    }
+
+    init(id: String, label: String, values: [String], swatches: [Color] = [], isTotal: Bool = false) {
+        self.id = id
+        self.label = label
+        self.values = values
+        self.swatches = swatches
+        self.isTotal = isTotal
+    }
+}
+
+/// The pointer and the point it selects are not the same place: on a sparse
+/// chart the nearest datum can sit half a slot away. Content comes from the
+/// index, placement from the pointer, so the card never slides under the cursor.
+struct ChartHoverPoint: Equatable {
+    let index: Int
+    let cursorX: CGFloat
 }
 
 private struct HoverMarker: Identifiable {
@@ -357,10 +400,10 @@ private struct HoverMarker: Identifiable {
 
 private struct ChartHoverLayer: View {
     let proxy: ChartProxy
-    @Binding var hovered: Int?
+    @Binding var hovered: ChartHoverPoint?
     let resolve: (Double) -> Int?
-    let xPosition: (Int) -> Double
     let title: (Int) -> String
+    let columns: [String]
     let rows: (Int) -> [HoverRow]
 
     var body: some View {
@@ -374,104 +417,144 @@ private struct ChartHoverLayer: View {
                             hovered = nil
                             return
                         }
-                        hovered = index(at: point, in: geometry)
+                        hovered = hoverPoint(at: point, in: geometry)
                     }
 
                 if let hovered {
-                    ChartReadout(title: title(hovered), rows: rows(hovered))
-                        .offset(x: readoutX(for: hovered, in: geometry), y: 0)
+                    let readout = ChartReadout(
+                        title: title(hovered.index),
+                        columns: columns,
+                        rows: rows(hovered.index)
+                    )
+                    readout.offset(
+                        x: ChartReadout.placement(
+                            besideCursor: hovered.cursorX,
+                            width: readout.width,
+                            within: geometry.size.width
+                        ),
+                        y: 0
+                    )
                 }
             }
         }
     }
 
-    private func index(at point: CGPoint, in geometry: GeometryProxy) -> Int? {
+    private func hoverPoint(at point: CGPoint, in geometry: GeometryProxy) -> ChartHoverPoint? {
         guard let anchor = proxy.plotFrame else { return nil }
         let plot = geometry[anchor]
         guard plot.contains(point),
-              let raw = proxy.value(atX: point.x - plot.minX, as: Double.self) else { return nil }
-        return resolve(raw)
-    }
-
-    private func readoutX(for index: Int, in geometry: GeometryProxy) -> CGFloat {
-        guard let anchor = proxy.plotFrame,
-              let position = proxy.position(forX: xPosition(index)) else { return 0 }
-        let cursor = geometry[anchor].minX + position
-        let width = ChartReadout.width
-        let trailing = cursor + 12
-        let leading = cursor - width - 12
-        if trailing + width <= geometry.size.width { return trailing }
-        return max(0, leading)
+              let raw = proxy.value(atX: point.x - plot.minX, as: Double.self),
+              let index = resolve(raw) else { return nil }
+        return ChartHoverPoint(index: index, cursorX: point.x)
     }
 }
 
 struct ChartReadout: View {
-    static let width: CGFloat = 132
-    static let compactWidth: CGFloat = 120
-
     let title: String
+    var columns: [String] = []
     let rows: [HoverRow]
-    var compact = false
+
+    static let cursorGap: CGFloat = 16
+
+    static func placement(besideCursor cursor: CGFloat, width: CGFloat, within available: CGFloat) -> CGFloat {
+        let trailing = cursor + cursorGap
+        if trailing + width <= available { return trailing }
+        let leading = cursor - cursorGap - width
+        if leading >= 0 { return leading }
+        return max(0, min(available - width, trailing))
+    }
+
+    private var showsSwatches: Bool {
+        rows.contains { !$0.swatches.isEmpty }
+    }
+
+    var width: CGFloat {
+        let labelColumn: CGFloat = 62
+        let valueColumn: CGFloat = columns.count > 1 ? 44 : 56
+        return labelColumn + valueColumn * CGFloat(max(1, columns.count)) + (showsSwatches ? 22 : 12)
+    }
+
+    private var firstTotalID: String? {
+        rows.first(where: \.isTotal)?.id
+    }
 
     var body: some View {
-        if compact {
-            compactBody
-        } else {
-            stackedBody
-        }
-    }
-
-    private var compactBody: some View {
-        HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 2.5) {
             Text(title)
-                .foregroundStyle(.secondary)
-                .fixedSize()
-            Spacer(minLength: 4)
-            if let color = rows.first?.color {
-                Circle().fill(color).frame(width: 6, height: 6)
-            }
-            Text(rows.first?.value ?? "")
-                .fontWeight(.semibold)
-                .monospacedDigit()
-        }
-        .font(.caption2)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .frame(width: Self.compactWidth, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.12)))
-        .shadow(color: .black.opacity(0.16), radius: 4, y: 1)
-        .allowsHitTesting(false)
-    }
-
-    private var stackedBody: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 1)
-            ForEach(rows) { row in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(row.color ?? .clear)
-                        .frame(width: 7, height: 7)
-                    Text(row.label)
-                        .foregroundStyle(row.color == nil ? .secondary : .primary)
-                    Spacer(minLength: 8)
-                    Text(row.value)
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
+
+            if columns.count > 1 {
+                row(
+                    label: "",
+                    values: columns,
+                    swatches: [],
+                    emphasised: false,
+                    muted: true
+                )
+            }
+
+            ForEach(rows) { entry in
+                if entry.id == firstTotalID {
+                    Divider().padding(.vertical, 2)
                 }
+                row(
+                    label: entry.label,
+                    values: entry.values,
+                    swatches: entry.swatches,
+                    emphasised: entry.isTotal,
+                    muted: false
+                )
             }
         }
-        .font(.caption2)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(width: Self.width, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
-        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(width: width, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.12)))
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
         .allowsHitTesting(false)
+    }
+
+    private func row(
+        label: String,
+        values: [String],
+        swatches: [Color],
+        emphasised: Bool,
+        muted: Bool
+    ) -> some View {
+        HStack(spacing: 5) {
+            chip(swatches)
+            Text(label)
+                .foregroundStyle(emphasised ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            Spacer(minLength: 4)
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                Text(value)
+                    .monospacedDigit()
+                    .foregroundStyle(muted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .frame(width: columns.count > 1 ? 40 : nil, alignment: .trailing)
+            }
+        }
+        .font(.system(size: 10, weight: emphasised ? .semibold : .regular))
+    }
+
+    @ViewBuilder
+    private func chip(_ swatches: [Color]) -> some View {
+        if !showsSwatches {
+            EmptyView()
+        } else if swatches.isEmpty {
+            Color.clear.frame(width: 11, height: 7)
+        } else {
+            HStack(spacing: 1) {
+                ForEach(Array(swatches.enumerated()), id: \.offset) { _, color in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(color)
+                        .frame(width: swatches.count > 1 ? 5 : 11, height: 7)
+                }
+            }
+            .frame(width: 11, alignment: .leading)
+        }
     }
 }
 
@@ -511,6 +594,12 @@ private func monthTitle(_ label: String) -> String {
     guard parts.count >= 2, let month = Int(parts[1]),
           monthNames.indices.contains(month - 1) else { return label }
     return "\(monthNames[month - 1]) \(parts[0])"
+}
+
+/// Documentation is counted separately from source, and the report prints it in
+/// brackets beside the source figure. The readouts follow that.
+private func bracketed(_ value: Int) -> String {
+    "(" + MetricFormatter.compact(value) + ")"
 }
 
 private func bufferedDomain(positive: Int, negative: Int) -> ClosedRange<Double> {

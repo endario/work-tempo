@@ -37,6 +37,25 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.recentLabels.first, "2026-08-01")
     }
 
+    // A readout puts the day's added and removed beside its churn, so the three
+    // series have to be the same slice of the same window.
+    func testRecentAddedAndDeletedCoverTheSameWindowAsChurn() throws {
+        // Values vary by index so a window off by even one day fails.
+        let added = (0..<60).map { $0 }
+        let deleted = (0..<60).map { 100 + $0 }
+        let report = try ReportDocument.decode(data: makeReportData(
+            churn: zip(added, deleted).map(+) + [99_999],
+            added: added + [99_999],
+            deleted: deleted + [99_999]
+        ))
+
+        let summary = MomentumSummary(report: report)
+
+        XCTAssertEqual(summary.recentAdded, Array(30..<60))
+        XCTAssertEqual(summary.recentDeleted, (30..<60).map { 100 + $0 })
+        XCTAssertEqual(zip(summary.recentAdded, summary.recentDeleted).map(+), summary.recentChurn)
+    }
+
     func testUsesReportGeneratedDateInsteadOfCurrentDate() throws {
         let report = try ReportDocument.decode(data: makeReportData(
             generatedDate: "2026-08-31",
