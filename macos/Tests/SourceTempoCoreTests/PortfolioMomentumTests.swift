@@ -195,30 +195,27 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(months[1].currentProgress), 1.5 / 31, accuracy: 0.000_001)
     }
 
-    func testCumulativeChangesAccumulateEachDirectionIndependently() {
+    // The open day is drawn short of its slot, so an x coordinate that rounds to
+    // the previous whole index must still resolve to the open day.
+    func testNearestPointIndexPicksTheOpenDayDrawnShortOfItsSlot() throws {
         let timeline = ChartTimeline(
-            labels: ["2026-08-01", "2026-08-02"],
-            closedDayCount: 1,
-            currentProgress: 0.5,
-            codeLoc: [1, 1],
-            testLoc: [1, 1],
-            docLoc: [1, 1],
-            codeAdded: [1, 2],
-            testAdded: [2, 3],
-            codeDeleted: [3, 4],
-            testDeleted: [4, 5],
-            docAdded: [5, 6],
-            docDeleted: [6, 7]
+            labels: ["2026-08-01", "2026-08-02", "2026-08-03"],
+            closedDayCount: 2,
+            currentProgress: 0.25,
+            codeLoc: [1, 1, 1],
+            testLoc: [1, 1, 1],
+            docLoc: [1, 1, 1],
+            codeAdded: [1, 1, 1],
+            testAdded: [1, 1, 1],
+            codeDeleted: [1, 1, 1],
+            testDeleted: [1, 1, 1],
+            docAdded: [1, 1, 1],
+            docDeleted: [1, 1, 1]
         )
 
-        XCTAssertEqual(timeline.cumulativeChanges.last, CumulativeChangePoint(
-            index: 1,
-            codeAdded: 3,
-            testAdded: 5,
-            docAdded: 11,
-            codeDeleted: 7,
-            testDeleted: 9,
-            docDeleted: 13
-        ))
+        XCTAssertEqual(timeline.pointPosition(at: 2), 1.25, accuracy: 0.000_001)
+        XCTAssertEqual(timeline.nearestPointIndex(toX: 1.25), 2)
+        XCTAssertEqual(timeline.nearestPointIndex(toX: 1.2), 2)
+        XCTAssertEqual(timeline.nearestPointIndex(toX: 0.9), 1)
     }
 }

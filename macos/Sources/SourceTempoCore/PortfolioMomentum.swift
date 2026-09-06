@@ -63,16 +63,6 @@ public struct MonthlyChurnPoint: Equatable, Sendable {
     public let currentProgress: Double?
 }
 
-public struct CumulativeChangePoint: Equatable, Sendable {
-    public let index: Int
-    public let codeAdded: Int
-    public let testAdded: Int
-    public let docAdded: Int
-    public let codeDeleted: Int
-    public let testDeleted: Int
-    public let docDeleted: Int
-}
-
 public extension ChartTimeline {
     var monthlyChurn: [MonthlyChurnPoint] {
         var accumulators: [MonthAccumulator] = []
@@ -120,30 +110,17 @@ public extension ChartTimeline {
         return result
     }
 
-    var cumulativeChanges: [CumulativeChangePoint] {
-        var codeAddedTotal = 0
-        var testAddedTotal = 0
-        var docAddedTotal = 0
-        var codeDeletedTotal = 0
-        var testDeletedTotal = 0
-        var docDeletedTotal = 0
-        return labels.indices.map { index in
-            codeAddedTotal += codeAdded[index]
-            testAddedTotal += testAdded[index]
-            docAddedTotal += docAdded[index]
-            codeDeletedTotal += codeDeleted[index]
-            testDeletedTotal += testDeleted[index]
-            docDeletedTotal += docDeleted[index]
-            return CumulativeChangePoint(
-                index: index,
-                codeAdded: codeAddedTotal,
-                testAdded: testAddedTotal,
-                docAdded: docAddedTotal,
-                codeDeleted: codeDeletedTotal,
-                testDeleted: testDeletedTotal,
-                docDeleted: docDeletedTotal
-            )
-        }
+    /// The open day is drawn short of its own slot, at the fraction of the day
+    /// that has elapsed, so a chart never shows a partial day as a whole one.
+    func pointPosition(at index: Int) -> Double {
+        guard index == labels.count - 1, index > 0, let currentProgress else { return Double(index) }
+        return Double(index - 1) + currentProgress
+    }
+
+    /// Rounding the x coordinate would skip the open day whenever it is drawn
+    /// more than half a slot short, so pick the nearest drawn point instead.
+    func nearestPointIndex(toX x: Double) -> Int? {
+        labels.indices.min { abs(pointPosition(at: $0) - x) < abs(pointPosition(at: $1) - x) }
     }
 
     private func currentMonthProgress(label: String) -> Double? {
