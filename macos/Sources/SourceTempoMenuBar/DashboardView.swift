@@ -103,7 +103,10 @@ struct DashboardView: View {
                 if let progress = model.refreshProgress {
                     statusBanner(progress, symbol: "arrow.trianglehead.2.clockwise.rotate.90")
                 }
+                // The sparkline readouts hang below their 24-point plots, over
+                // the metric row that follows them in this stack.
                 MomentumHero(snapshot: model.snapshot)
+                    .zIndex(1)
                 metricRow
                 chartSection
             }
