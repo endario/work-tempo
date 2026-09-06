@@ -148,14 +148,20 @@ struct DashboardView: View {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
-                        chartTitle("SOURCE LOC")
+                        chartTitle(
+                            "SOURCE LOC",
+                            help: "Day-end code and test lines; documentation is counted separately, below the axis"
+                        )
                         Spacer()
                         kindLegend
                     }
                     SourceVolumeChart(timeline: chart)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    chartTitle("MONTHLY CHURN")
+                    chartTitle(
+                        "MONTHLY CHURN",
+                        help: "Source lines added and removed per calendar month; documentation is counted separately, below the axis"
+                    )
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -274,10 +280,11 @@ struct DashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    private func chartTitle(_ title: String) -> some View {
+    private func chartTitle(_ title: String, help: String) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
+            .foregroundStyle(.secondary)
+            .help(help)
     }
 
     private var lastUpdatedLabel: String {
