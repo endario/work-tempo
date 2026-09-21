@@ -49,7 +49,7 @@ The CLI analyzes the current directory, or `--root` for another checkout. Config
 
 `--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [src/source_tempo/defaults.json](../src/source_tempo/defaults.json) is the single source of the defaults and shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
 
-Counting policy belongs to the workspace being measured.
+Counting policy belongs to the workspace being measured. It is a `Config` built once per run from `defaults.json` plus the layers above and passed to the functions that count, including the worker processes.
 
 ## Counting model
 
