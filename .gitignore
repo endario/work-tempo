@@ -7,5 +7,5 @@ __pycache__/
 build/
 macos/.build/
 dist/
-.source-tempo.local.json
+.work-tempo.local.json
 .claude/independent-runs/

@@ -1,5 +1,5 @@
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class ReportDocumentTests: XCTestCase {
     func testDecodesSchemaVersionOneDailyReport() throws {

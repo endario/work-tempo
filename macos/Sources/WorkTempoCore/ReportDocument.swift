@@ -10,7 +10,7 @@ public enum ReportError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case let .unsupportedSchema(version):
-            "Unsupported SourceTempo report schema: \(version)"
+            "Unsupported WorkTempo report schema: \(version)"
         case let .unsupportedPeriod(period):
             "The menu app requires daily reports, not \(period)"
         case let .invalidGeneratedAt(value):

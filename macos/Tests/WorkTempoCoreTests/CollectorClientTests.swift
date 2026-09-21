@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class CollectorClientTests: XCTestCase {
     func testCollectsReportWithExactArguments() async throws {

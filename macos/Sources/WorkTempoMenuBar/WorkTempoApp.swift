@@ -1,9 +1,9 @@
 import AppKit
-import SourceTempoCore
+import WorkTempoCore
 import SwiftUI
 
 @main
-struct SourceTempoApp: App {
+struct WorkTempoApp: App {
     @StateObject private var model = AppModel()
 #if DEBUG
     @NSApplicationDelegateAdaptor(DebugPreviewDelegate.self) private var previewDelegate

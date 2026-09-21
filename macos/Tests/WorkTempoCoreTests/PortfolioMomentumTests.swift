@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class PortfolioMomentumTests: XCTestCase {
     func testUsesOneCohortAndWatermarkForTotalsRateAndCharts() throws {

@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class AppSnapshotModelTests: XCTestCase {
     func testEmptySnapshotHasUsefulMenuAndAccessibilityCopy() throws {
@@ -14,7 +14,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .empty)
         XCTAssertEqual(snapshot.menuValue, "--")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, fixture, no report yet")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Work Tempo, fixture, no report yet")
         XCTAssertFalse(snapshot.hasMomentum)
         XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
 
@@ -62,7 +62,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .ready)
         XCTAssertEqual(snapshot.menuValue, "10/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 10 code and test lines changed per day")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Work Tempo, Fixture, 10 code and test lines changed per day")
         XCTAssertEqual(snapshot.metrics.map(\.value), ["12K", "8K", "4.3K", "900"])
         XCTAssertTrue(snapshot.hasMomentum)
         XCTAssertEqual(snapshot.recentChurn.count, 30)
@@ -83,7 +83,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertTrue(refreshing.isRefreshing)
         XCTAssertEqual(refreshing.dataState, .ready)
         XCTAssertEqual(refreshing.menuValue, "2/d")
-        XCTAssertEqual(refreshing.menuAccessibilityLabel, "Source Tempo, Fixture, 2 code and test lines changed per day, refreshing")
+        XCTAssertEqual(refreshing.menuAccessibilityLabel, "Work Tempo, Fixture, 2 code and test lines changed per day, refreshing")
 
         let failed = DashboardSnapshot(
             workspace: workspace,
@@ -107,7 +107,7 @@ final class AppSnapshotModelTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataState, .stale)
         XCTAssertEqual(snapshot.menuValue, "2/d")
-        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Source Tempo, Fixture, 2 code and test lines changed per day, stale")
+        XCTAssertEqual(snapshot.menuAccessibilityLabel, "Work Tempo, Fixture, 2 code and test lines changed per day, stale")
     }
 
     func testFractionalCollectorTimestampDoesNotForceFreshReportStale() throws {
@@ -271,7 +271,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.menuValue, "10/d")
         XCTAssertEqual(
             snapshot.menuAccessibilityLabel,
-            "Source Tempo, all workspaces, 10 code and test lines changed per day"
+            "Work Tempo, all workspaces, 10 code and test lines changed per day"
         )
     }
 

@@ -67,9 +67,9 @@ CONFIG_KEYS_V1 = frozenset({
 })
 CONFIG_KEYS_V2 = CONFIG_KEYS_V1 | {"test_file_markers"}
 REPORT_SCHEMA_VERSION = 1
-CONFIG_FILENAME = ".source-tempo.json"
-LOCAL_CONFIG_FILENAME = ".source-tempo.local.json"
-REPORT_TITLE = "SourceTempo"
+CONFIG_FILENAME = ".work-tempo.json"
+LOCAL_CONFIG_FILENAME = ".work-tempo.local.json"
+REPORT_TITLE = "WorkTempo"
 FORECAST_MONTHS = 3
 FORECAST_SLOPE_WINDOW_MONTHS = 6
 
@@ -450,15 +450,15 @@ def git_dir(repo: Path) -> Path | None:
 
 
 def user_cache_root() -> Path:
-    override = os.environ.get("SOURCE_TEMPO_CACHE_HOME")
+    override = os.environ.get("WORK_TEMPO_CACHE_HOME")
     if override:
         return Path(override).expanduser().resolve()
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Caches" / "SourceTempo"
+        return Path.home() / "Library" / "Caches" / "WorkTempo"
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return base / "SourceTempo" / "Cache"
-    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "source-tempo"
+        return base / "WorkTempo" / "Cache"
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "work-tempo"
 
 
 def workspace_artifact_dir(root: Path) -> Path:

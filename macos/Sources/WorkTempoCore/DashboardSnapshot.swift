@@ -85,7 +85,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             windowDays = 30
             historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
-            menuAccessibilityLabel = "Source Tempo, \(workspaceName), no report yet\(status)"
+            menuAccessibilityLabel = "Work Tempo, \(workspaceName), no report yet\(status)"
             return
         }
 
@@ -128,7 +128,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else if dataState == .stale || dataState == .failedWithCache {
             menuStatus = ", stale"
         }
-        menuAccessibilityLabel = "Source Tempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) code and test lines changed per day\(menuStatus)"
+        menuAccessibilityLabel = "Work Tempo, \(workspaceName), \(MetricFormatter.compact(summary.dailyChurn)) code and test lines changed per day\(menuStatus)"
     }
 
     public init(
@@ -191,7 +191,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             menuStatus = ", stale"
         }
         let rate = summary.map { MetricFormatter.compact($0.dailyChurn) } ?? "--"
-        menuAccessibilityLabel = "Source Tempo, all workspaces, \(rate) code and test lines changed per day\(menuStatus)"
+        menuAccessibilityLabel = "Work Tempo, all workspaces, \(rate) code and test lines changed per day\(menuStatus)"
     }
 
     private static let emptyMetrics = [

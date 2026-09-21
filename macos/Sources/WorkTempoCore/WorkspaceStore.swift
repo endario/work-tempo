@@ -25,7 +25,7 @@ public struct WorkspaceStore: Sendable {
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
             ).first!
-            self.baseDirectory = applicationSupport.appending(path: "SourceTempo", directoryHint: .isDirectory)
+            self.baseDirectory = applicationSupport.appending(path: "WorkTempo", directoryHint: .isDirectory)
         }
     }
 

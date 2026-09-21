@@ -1,6 +1,6 @@
 import AppKit
 import Charts
-import SourceTempoCore
+import WorkTempoCore
 import SwiftUI
 
 /// Steps are solved against `fillOpacity` composited over the popover's own

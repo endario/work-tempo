@@ -1,1 +1,0 @@
-"""SourceTempo source-momentum reporting."""

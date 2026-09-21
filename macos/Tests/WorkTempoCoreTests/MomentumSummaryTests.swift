@@ -1,5 +1,5 @@
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class MomentumSummaryTests: XCTestCase {
     func testComparesTwoClosedThirtyDayWindowsAndExcludesDocs() throws {
