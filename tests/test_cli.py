@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import importlib.util
 import io
 import json
@@ -165,10 +166,13 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            self.assertEqual(
-                tempo.load_workspace_config_layers(root),
-                {"report_title": "Personal", "extra_repos": []},
-            )
+            layers = tempo.load_workspace_config_layers(root)
+            self.assertEqual([path.name for path, _layer in layers], [
+                tempo.CONFIG_FILENAME, tempo.LOCAL_CONFIG_FILENAME,
+            ])
+            config = tempo.build_config(tempo.load_packaged_defaults(), layers, "Fallback")
+            self.assertEqual(config.report_title, "Personal")
+            self.assertEqual(config.extra_repos, ())
 
     def test_explicit_config_replaces_default_local_layer(self) -> None:
         tempo = load_script(
@@ -188,21 +192,24 @@ class LocAnalysisScriptTest(unittest.TestCase):
             )
             explicit.write_text(json.dumps({"report_title": "Explicit"}), encoding="utf-8")
 
-            self.assertEqual(
-                tempo.load_workspace_config_layers(root, explicit),
-                {"report_title": "Explicit"},
-            )
+            layers = tempo.load_workspace_config_layers(root, explicit)
+            self.assertEqual([path.name for path, _layer in layers], [tempo.CONFIG_FILENAME, "personal.json"])
+            config = tempo.build_config(tempo.load_packaged_defaults(), layers, "Fallback")
+            self.assertEqual(config.report_title, "Explicit")
 
     def test_build_config_overlays_workspace_layers_onto_defaults(self) -> None:
         tempo = load_script("tempo_effective_config_test", "src/source_tempo/cli.py")
         config = tempo.build_config(
             tempo.load_packaged_defaults(),
-            {
-                "extra_repos": [
-                    {"label": "companion", "path": "../companion"},
-                    {"label": "embedded", "path": "embedded"},
-                ],
-            },
+            [(
+                "test",
+                {
+                    "extra_repos": [
+                        {"label": "companion", "path": "../companion"},
+                        {"label": "embedded", "path": "embedded"},
+                    ],
+                },
+            )],
             "Fixture",
         )
 
@@ -448,14 +455,14 @@ class LocAnalysisScriptTest(unittest.TestCase):
             try:
                 tempo.run = fake_run
 
-                config = tempo.build_config(defaults, {"extra_repos": []}, "Fixture")
+                config = tempo.build_config(defaults, [("test", {"extra_repos": []})], "Fixture")
                 repos, skipped = tempo.list_repos(root, config)
                 self.assertEqual([label for label, _path in repos], ["(parent)"])
                 self.assertEqual(skipped, [])
 
                 config = tempo.build_config(
                     defaults,
-                    {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]},
+                    [("test", {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]})],
                     "Fixture",
                 )
                 repos, skipped = tempo.list_repos(root, config)
@@ -1206,8 +1213,16 @@ class LocAnalysisScriptTest(unittest.TestCase):
     def test_default_policy_signature_is_pinned(self) -> None:
         tempo = load_script("tempo_signature_pin_test", "src/source_tempo/cli.py")
         config = tempo.default_config()
-        self.assertEqual(config.signature(include_vendor=False), "d1d7d3a40ab93799")
-        self.assertEqual(config.signature(include_vendor=True), "000ce7a2e8d2c03c")
+        self.assertEqual(config.signature(include_vendor=False), "4a69ffb70c5e13ed")
+        self.assertEqual(config.signature(include_vendor=True), "c2963656b6d8676b")
+
+    def test_signature_payload_is_the_pre_v2_payload_plus_test_file_markers(self) -> None:
+        tempo = load_script("tempo_signature_payload_test", "src/source_tempo/cli.py")
+        payload = tempo.default_config().signature_payload(include_vendor=False)
+        self.assertEqual(payload["test_file_markers"], (".test.", ".spec.", ".e2e.", ".cy."))
+        del payload["test_file_markers"]
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        self.assertEqual(hashlib.sha256(encoded).hexdigest()[:16], "d1d7d3a40ab93799")
 
     def test_packaged_defaults_match_default_config_and_init_config(self) -> None:
         tempo = load_script("tempo_packaged_defaults_test", "src/source_tempo/cli.py")
@@ -1308,6 +1323,90 @@ class LocAnalysisScriptTest(unittest.TestCase):
             overlaid = run_report(1)
             self.assertIn("Snake", json.dumps(overlaid))
             self.assertEqual(overlaid, run_report(2))
+
+    def test_config_version_matrix(self) -> None:
+        tempo = load_script("tempo_version_matrix_test", "src/source_tempo/cli.py")
+        cases = [
+            ("missing version, v1 keys", {"test_dir_names": ["checks"]}, None),
+            ("v1 with test_file_markers", {"schema_version": 1, "test_file_markers": [".t."]}, "test_file_markers"),
+            ("missing version with test_file_markers", {"test_file_markers": [".t."]}, "test_file_markers"),
+            ("v2 with test_file_markers", {"schema_version": 2, "test_file_markers": [".t."]}, None),
+            ("unknown key", {"schema_version": 1, "test_dir_name": ["checks"]}, "test_dir_name"),
+            ("unsupported version", {"schema_version": 3}, "schema_version"),
+            ("boolean version", {"schema_version": True}, "schema_version"),
+            ("bad type", {"schema_version": 1, "test_dir_names": "checks"}, "test_dir_names"),
+        ]
+        for label, layer, expected_error in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / tempo.CONFIG_FILENAME).write_text(json.dumps(layer), encoding="utf-8")
+                layers = tempo.load_workspace_config_layers(root)
+                if expected_error is None:
+                    tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
+                else:
+                    with self.assertRaisesRegex(ValueError, expected_error):
+                        tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
+
+    def test_bad_tracked_layer_is_not_masked_by_a_good_local_layer(self) -> None:
+        tempo = load_script("tempo_masking_test", "src/source_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / tempo.CONFIG_FILENAME).write_text(json.dumps({"schema_version": 3}), encoding="utf-8")
+            (root / tempo.LOCAL_CONFIG_FILENAME).write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+            layers = tempo.load_workspace_config_layers(root)
+            with self.assertRaisesRegex(ValueError, "schema_version"):
+                tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
+
+    def test_v1_layer_may_overlay_v2_defaults(self) -> None:
+        tempo = load_script("tempo_v1_over_v2_test", "src/source_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / tempo.CONFIG_FILENAME).write_text(
+                json.dumps({"schema_version": 1, "test_dir_names": ["checks"]}), encoding="utf-8"
+            )
+            layers = tempo.load_workspace_config_layers(root)
+            config = tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
+            self.assertEqual(config.test_dir_names, frozenset({"checks"}))
+            self.assertEqual(config.test_file_markers, tempo.default_config().test_file_markers)
+
+    def test_packaged_defaults_missing_a_key_are_a_packaging_fault(self) -> None:
+        tempo = load_script("tempo_defaults_missing_key_test", "src/source_tempo/cli.py")
+        defaults = tempo.load_packaged_defaults()
+        del defaults["test_dir_names"]
+        with self.assertRaisesRegex(RuntimeError, "test_dir_names"):
+            tempo.build_config(defaults, [], "Fixture")
+
+    def test_init_config_output_is_accepted_by_the_strict_loader(self) -> None:
+        tempo = load_script("tempo_init_roundtrip_test", "src/source_tempo/cli.py")
+        written = json.loads(json.dumps(tempo.default_config_data("Fixture")))
+        config = tempo.build_config(tempo.load_packaged_defaults(), [("init", written)], "Other")
+        self.assertEqual(config, tempo.default_config("Fixture"))
+
+    def test_test_file_markers_are_configurable(self) -> None:
+        tempo = load_script("tempo_markers_test", "src/source_tempo/cli.py")
+        base = tempo.default_config()
+        self.assertEqual(base.source_kind_for_path("a/widget.cy.ts"), "test")
+        custom = dataclasses.replace(base, test_file_markers=(".check.",))
+        self.assertEqual(custom.source_kind_for_path("a/widget.cy.ts"), "code")
+        self.assertEqual(custom.source_kind_for_path("a/widget.check.ts"), "test")
+
+    def test_invalid_config_stops_the_run_before_any_repository_is_read(self) -> None:
+        tempo = load_script("tempo_invalid_config_run_test", "src/source_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            (repo / tempo.CONFIG_FILENAME).write_text(
+                json.dumps({"test_dir_name": ["checks"]}), encoding="utf-8"
+            )
+            argv = ["source-tempo", "--root", str(repo), "--no-html", "--no-cache"]
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", stderr),
+                mock.patch.object(tempo, "list_repos", side_effect=AssertionError("read a repository")),
+            ):
+                self.assertEqual(tempo.main(), 1)
+            self.assertIn("unknown config key 'test_dir_name'", stderr.getvalue())
 
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
         tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")

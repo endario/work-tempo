@@ -44,7 +44,29 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CACHE_SCHEMA_VERSION = 4
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
+SUPPORTED_CONFIG_VERSIONS = (1, 2)
+CONFIG_KEYS_V1 = frozenset({
+    "report_title",
+    "language_by_ext",
+    "exclude_exts",
+    "documentation_by_ext",
+    "doc_only_repo_names",
+    "language_by_name",
+    "exclude_dirs",
+    "vendor_dirs",
+    "exclude_submodules",
+    "extra_repos",
+    "generated_or_minified_markers",
+    "generated_or_minified_suffixes",
+    "generated_or_minified_names",
+    "test_dir_names",
+    "test_file_exact_stems",
+    "test_file_lower_prefixes",
+    "test_file_lower_suffixes",
+    "test_file_case_suffixes",
+})
+CONFIG_KEYS_V2 = CONFIG_KEYS_V1 | {"test_file_markers"}
 REPORT_SCHEMA_VERSION = 1
 CONFIG_FILENAME = ".source-tempo.json"
 LOCAL_CONFIG_FILENAME = ".source-tempo.local.json"
@@ -118,15 +140,31 @@ def load_workspace_config(path: Path | None) -> dict:
     return raw
 
 
-def load_workspace_config_layers(root: Path, explicit_path: Path | None = None) -> dict:
-    merged: dict = {}
+def load_workspace_config_layers(
+    root: Path, explicit_path: Path | None = None
+) -> list[tuple[Path, dict]]:
+    """Return the existing tracked and local (or explicit) config files, in overlay order."""
     paths = (
         root / CONFIG_FILENAME,
         explicit_path if explicit_path is not None else root / LOCAL_CONFIG_FILENAME,
     )
-    for path in paths:
-        merged.update(load_workspace_config(path))
-    return merged
+    return [(path, load_workspace_config(path)) for path in paths if path.exists()]
+
+
+def validate_layer(raw: dict, source: object) -> dict:
+    """Check one layer against the keys its declared schema version allows; drop `schema_version`."""
+    version = raw.get("schema_version", 1)
+    if type(version) is not int or version not in SUPPORTED_CONFIG_VERSIONS:
+        raise ValueError(f"unsupported config schema_version {version!r} in {source}")
+    allowed = CONFIG_KEYS_V2 if version >= 2 else CONFIG_KEYS_V1
+    layer = {key: value for key, value in raw.items() if key != "schema_version"}
+    for key in layer:
+        if key in allowed:
+            continue
+        if key in CONFIG_KEYS_V2:
+            raise ValueError(f"config key {key!r} in {source} requires schema_version 2")
+        raise ValueError(f"unknown config key {key!r} in {source}")
+    return layer
 
 
 @dataclass(frozen=True)
@@ -151,6 +189,7 @@ class Config:
     test_file_lower_prefixes: tuple[str, ...]
     test_file_lower_suffixes: tuple[str, ...]
     test_file_case_suffixes: tuple[str, ...]
+    test_file_markers: tuple[str, ...]
 
     def excluded_dirs(self, include_vendor: bool) -> frozenset[str]:
         return self.exclude_dirs if not include_vendor else self.exclude_dirs - self.vendor_dirs
@@ -194,7 +233,7 @@ class Config:
             return "test"
         if stem.endswith(self.test_file_case_suffixes):
             return "test"
-        if any(marker in lower_name for marker in (".test.", ".spec.", ".e2e.", ".cy.")):
+        if any(marker in lower_name for marker in self.test_file_markers):
             return "test"
         return "code"
 
@@ -223,8 +262,8 @@ class Config:
             return False
         return self.documentation_language_for_path(path) is not None
 
-    def signature(self, include_vendor: bool) -> str:
-        payload = {
+    def signature_payload(self, include_vendor: bool) -> dict:
+        return {
             "language_by_ext": self.language_by_ext,
             "language_by_name": self.language_by_name,
             "documentation_by_ext": self.documentation_by_ext,
@@ -240,23 +279,31 @@ class Config:
             "test_file_lower_prefixes": self.test_file_lower_prefixes,
             "test_file_lower_suffixes": self.test_file_lower_suffixes,
             "test_file_case_suffixes": self.test_file_case_suffixes,
+            "test_file_markers": self.test_file_markers,
             "include_vendor": include_vendor,
         }
+
+    def signature(self, include_vendor: bool) -> str:
+        payload = self.signature_payload(include_vendor)
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
 
 
-def build_config(defaults: dict, layers: dict, report_title: str) -> Config:
-    """Overlay config layers on packaged defaults; a later top-level key replaces an earlier one."""
-    if layers:
-        schema_version = layers.get("schema_version", CONFIG_SCHEMA_VERSION)
-        if schema_version != CONFIG_SCHEMA_VERSION:
-            raise ValueError(f"unsupported config schema_version {schema_version!r}")
-    raw = {**defaults, **layers}
-    if "report_title" in layers:
-        if not isinstance(layers["report_title"], str):
+def build_config(defaults: dict, layers: list[tuple[object, dict]], report_title: str) -> Config:
+    """Validate each layer, then overlay them on the packaged defaults in order.
+
+    A later top-level key replaces the earlier value. `defaults` is validated like any layer.
+    """
+    raw = validate_layer(defaults, "packaged defaults")
+    missing = sorted(CONFIG_KEYS_V2 - {"report_title"} - raw.keys())
+    if missing:
+        raise RuntimeError(f"packaged defaults missing keys: {', '.join(missing)}")
+    for source, layer in layers:
+        raw.update(validate_layer(layer, source))
+    if "report_title" in raw:
+        if not isinstance(raw["report_title"], str):
             raise ValueError("report_title must be a string")
-        report_title = layers["report_title"]
+        report_title = raw["report_title"]
 
     def strings(key: str) -> list[str]:
         return _string_list(raw[key], key)
@@ -280,11 +327,12 @@ def build_config(defaults: dict, layers: dict, report_title: str) -> Config:
         test_file_lower_prefixes=tuple(strings("test_file_lower_prefixes")),
         test_file_lower_suffixes=tuple(strings("test_file_lower_suffixes")),
         test_file_case_suffixes=tuple(strings("test_file_case_suffixes")),
+        test_file_markers=tuple(strings("test_file_markers")),
     )
 
 
 def default_config(report_title: str = REPORT_TITLE) -> Config:
-    return build_config(load_packaged_defaults(), {}, report_title)
+    return build_config(load_packaged_defaults(), [], report_title)
 
 
 def default_report_title_for_root(root: Path) -> str:
@@ -2206,11 +2254,11 @@ def main() -> int:
         return 0
 
     try:
-        workspace_config = (
-            {} if args.no_config else load_workspace_config_layers(root, explicit_config_path)
+        config_layers = (
+            [] if args.no_config else load_workspace_config_layers(root, explicit_config_path)
         )
-        config = build_config(defaults, workspace_config, default_report_title_for_root(root))
-    except ValueError as exc:
+        config = build_config(defaults, config_layers, default_report_title_for_root(root))
+    except (ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -2242,11 +2290,8 @@ def main() -> int:
     period_header = "Days" if args.period == "day" else "Months"
 
     print(f"Workspace: {root}")
-    if workspace_config:
-        config_sources = [root / CONFIG_FILENAME]
-        config_sources.append(explicit_config_path or root / LOCAL_CONFIG_FILENAME)
-        active_config_sources = [str(path) for path in config_sources if path.exists()]
-        print(f"Config: {', '.join(active_config_sources)}")
+    if any(layer for _path, layer in config_layers):
+        print(f"Config: {', '.join(str(path) for path, _layer in config_layers)}")
     else:
         print("Config: built-in defaults")
     counted_labels = {label for label, _path in repos}

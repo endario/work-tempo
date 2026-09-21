@@ -90,7 +90,9 @@ Configuration layers are applied in this order:
 2. Tracked `.source-tempo.json`.
 3. Untracked `.source-tempo.local.json`, or the file passed with `--config`.
 
-Later keys replace earlier keys. Arrays replace rather than append. Run `source-tempo --init-config` to write every supported field with its default, or read [src/source_tempo/defaults.json](src/source_tempo/defaults.json).
+Later keys replace earlier keys. Arrays replace rather than append. Each file is validated on its own before merging: an unknown key, a wrong type, or an unsupported `schema_version` is an error that names the key and file, so a typo cannot silently change the numbers.
+
+Config files declare `"schema_version": 1` or `2` (missing means 1). `test_file_markers`, the filename infixes that mark a test file, needs version 2; `--init-config` writes version 2. A version-2 file is rejected by older releases instead of being miscounted. Existing caches are recomputed once after upgrading. Run `source-tempo --init-config` to write every supported field with its default, or read [src/source_tempo/defaults.json](src/source_tempo/defaults.json).
 
 Additional repositories use paths relative to the main checkout:
 

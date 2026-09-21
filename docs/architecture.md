@@ -45,7 +45,7 @@ The CLI analyzes the current directory, or `--root` for another checkout. Config
 2. Tracked `<root>/.source-tempo.json`, the shared workspace policy.
 3. Untracked `<root>/.source-tempo.local.json` for personal overrides.
 
-`--config` replaces the local layer but the tracked layer still loads. `--no-config` disables both. Layers are merged per top-level key: a later key replaces the earlier value, and lists replace rather than append.
+`--config` replaces the local layer but the tracked layer still loads. `--no-config` disables both. Layers are validated one at a time, then merged per top-level key: a later key replaces the earlier value, and lists replace rather than append. Validation is version-specific: a file declaring `schema_version` 1 (or none) may use only the version-1 keys, and version 2 adds `test_file_markers`. Unknown keys and unsupported versions are errors.
 
 `--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [src/source_tempo/defaults.json](../src/source_tempo/defaults.json) is the single source of the defaults and shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
 
