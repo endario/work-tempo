@@ -9,6 +9,7 @@ It measures:
 - Language composition and per-repository contribution.
 - Documentation LOC and churn as separate informational metrics.
 
+
 The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing closed days, up to thirty. An individual workspace remains selectable from the header.
 
 Repository comparison and component classification are outside Source Tempo's scope.
@@ -190,6 +191,11 @@ cd macos
 swift test
 swift build -c release
 ```
+
+## Design docs
+
+- [Architecture](docs/architecture.md): the collector, configuration, counting model, and cache.
+- [macOS app](docs/macos-app.md): scheduling, aggregation, and metric definitions.
 
 ## License
 

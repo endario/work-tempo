@@ -93,10 +93,9 @@ DOCUMENTATION_BY_EXT: dict[str, str] = {
 }
 
 # Repositories whose tracked source-like artifacts are documentation evidence
-# rather than product source. Matching is by repository directory name and is
-# side-agnostic, so external targets with these names are also treated as docs.
-# A differently named docs checkout is counted as source unless configured here.
-DOC_ONLY_REPO_NAMES = {"documentation"}
+# rather than product source. Matching is by repository directory name, so a
+# docs checkout is counted as source unless its name is configured here.
+DOC_ONLY_REPO_NAMES: set[str] = set()
 
 LANGUAGE_BY_NAME: dict[str, str] = {
     "dockerfile": "Docker",

@@ -1199,7 +1199,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         original = tempo.DOC_ONLY_REPO_NAMES
         try:
             before = tempo.filter_signature(include_vendor=False)
-            tempo.DOC_ONLY_REPO_NAMES = {"documentation", "manuals"}
+            tempo.DOC_ONLY_REPO_NAMES = {"manuals"}
             after = tempo.filter_signature(include_vendor=False)
         finally:
             tempo.DOC_ONLY_REPO_NAMES = original
@@ -1208,6 +1208,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
         tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")
+        tempo.DOC_ONLY_REPO_NAMES = {"documentation"}
         for repo_name in ("documentation",):
             with self.subTest(repo_name=repo_name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp) / repo_name

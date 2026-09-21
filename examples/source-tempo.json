@@ -1,7 +1,5 @@
 {
-  "doc_only_repo_names": [
-    "documentation"
-  ],
+  "doc_only_repo_names": [],
   "documentation_by_ext": {
     ".adoc": "AsciiDoc",
     ".asciidoc": "AsciiDoc",
