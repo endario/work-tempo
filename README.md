@@ -9,6 +9,7 @@ It measures:
 - Language composition and per-repository contribution.
 - Documentation LOC and churn as separate informational metrics.
 
+
 The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing closed days, up to thirty. An individual workspace remains selectable from the header.
 
 Repository comparison and component classification are outside Source Tempo's scope.
@@ -25,7 +26,7 @@ Source Tempo has no Python runtime dependencies outside the standard library.
 For local development:
 
 ```bash
-git clone https://github.com/endario-org/source-tempo.git
+git clone https://github.com/endario/source-tempo.git
 cd source-tempo
 python3 -m venv .venv
 .venv/bin/pip install -e .
@@ -191,4 +192,11 @@ swift test
 swift build -c release
 ```
 
-The repository remains private during extraction. See [PROVENANCE.md](PROVENANCE.md) for the source boundary and licensing status.
+## Design docs
+
+- [Architecture](docs/architecture.md): the collector, configuration, counting model, and cache.
+- [macOS app](docs/macos-app.md): scheduling, aggregation, and metric definitions.
+
+## License
+
+[MIT](LICENSE)

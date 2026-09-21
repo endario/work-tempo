@@ -5,14 +5,14 @@ import XCTest
 final class WorkspaceStoreTests: XCTestCase {
     func testWorkspaceCanonicalizesRootAndUsesDirectoryName() throws {
         let temporary = try makeTemporaryDirectory()
-        let root = temporary.appending(path: "projects/../projects/reborn")
+        let root = temporary.appending(path: "projects/../projects/sample-app")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let workspace = try Workspace(root: temporary.appending(path: "projects/../projects/reborn"))
+        let workspace = try Workspace(root: temporary.appending(path: "projects/../projects/sample-app"))
 
         XCTAssertEqual(workspace.root.path, root.standardizedFileURL.resolvingSymlinksInPath().path)
         XCTAssertTrue(workspace.root.hasDirectoryPath)
-        XCTAssertEqual(workspace.displayName, "reborn")
+        XCTAssertEqual(workspace.displayName, "sample-app")
     }
 
     func testStateRoundTripsAndReportPathIsDeterministic() throws {

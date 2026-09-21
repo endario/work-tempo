@@ -29,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>SourceTempo</string>
   <key>CFBundleIdentifier</key>
-  <string>co.namespace.SourceTempo</string>
+  <string>io.github.endario.SourceTempo</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleIconFile</key>
