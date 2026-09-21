@@ -2133,7 +2133,6 @@ def write_html(path: Path, document: dict[str, object]) -> None:
 
 
 def main() -> int:
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--months", type=int, default=18)
     parser.add_argument("--period", choices=("month", "day"), default="month",
