@@ -51,6 +51,17 @@ The CLI analyzes the current directory, or `--root` for another checkout. Config
 
 Counting policy belongs to the workspace being measured. It is a `Config` built once per run from `defaults.json` plus the layers above and passed to the functions that count, including the worker processes.
 
+### Config schema versions
+
+Each layer declares `schema_version` (missing means 1) and is checked against that version's key list before layers are merged, so a bad tracked file cannot be hidden by a valid local one and `schema_version` never takes part in the overlay.
+
+| Declared version | Allowed keys |
+| --- | --- |
+| 1 or missing | the keys in `defaults.json` except `test_file_markers` |
+| 2 | all keys, including `test_file_markers` |
+
+A key that changes counting is only accepted under a version that older releases reject. Otherwise an older release would read the same shared `.source-tempo.json`, ignore the key, and report different numbers. A version-1 file may overlay the version-2 packaged defaults. The packaged defaults must declare the newest supported version, which `--init-config` writes.
+
 ## Counting model
 
 - LOC snapshots count newline-delimited tracked files at the last commit available at each period cutoff, read with `git archive`.

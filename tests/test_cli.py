@@ -1382,6 +1382,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
         config = tempo.build_config(tempo.load_packaged_defaults(), [("init", written)], "Other")
         self.assertEqual(config, tempo.default_config("Fixture"))
 
+    def test_packaged_defaults_declare_the_newest_supported_schema(self) -> None:
+        tempo = load_script("tempo_defaults_version_test", "src/source_tempo/cli.py")
+        self.assertEqual(
+            tempo.load_packaged_defaults()["schema_version"], max(tempo.SUPPORTED_CONFIG_VERSIONS)
+        )
+
     def test_test_file_markers_are_configurable(self) -> None:
         tempo = load_script("tempo_markers_test", "src/source_tempo/cli.py")
         base = tempo.default_config()

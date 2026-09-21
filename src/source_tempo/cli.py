@@ -44,7 +44,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CACHE_SCHEMA_VERSION = 4
-CONFIG_SCHEMA_VERSION = 2
 SUPPORTED_CONFIG_VERSIONS = (1, 2)
 CONFIG_KEYS_V1 = frozenset({
     "report_title",
