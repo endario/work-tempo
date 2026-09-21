@@ -27,7 +27,7 @@ It deliberately does not own repository comparison, component taxonomy, remote a
 src/source_tempo/
   __main__.py     python -m source_tempo
   cli.py          collector, cache, report model, HTML renderer
-  defaults.json   every default rule (package data)
+  defaults.json   default rules (package data)
 tests/test_cli.py
 macos/            menu-bar app (Swift package)
 scripts/build-macos-app.sh

@@ -40,7 +40,7 @@ Branch `refactor/defaults-as-data`. No behaviour change.
         self.assertEqual(tempo.filter_signature(include_vendor=False), "d1d7d3a40ab93799")
         self.assertEqual(tempo.filter_signature(include_vendor=True), "000ce7a2e8d2c03c")
 
-    def test_packaged_defaults_are_the_only_source_of_default_policy(self) -> None:
+    def test_packaged_defaults_match_module_constants_and_init_config(self) -> None:
         tempo = load_script("tempo_packaged_defaults_test", "src/source_tempo/cli.py")
         packaged = json.loads((REPO_ROOT / "src/source_tempo/defaults.json").read_text(encoding="utf-8"))
         self.assertEqual(tempo.default_config_data("x"), {**packaged, "report_title": "x"})
@@ -54,6 +54,7 @@ Branch `refactor/defaults-as-data`. No behaviour change.
             "exclude_dirs": tempo.EXCLUDE_DIRS,
             "vendor_dirs": tempo.VENDOR_DIRS,
             "exclude_submodules": tempo.EXCLUDE_SUBMODULES,
+            "extra_repos": tempo.EXTRA_REPOS,
             "generated_or_minified_markers": tempo.GENERATED_OR_MINIFIED_MARKERS,
             "generated_or_minified_suffixes": tempo.GENERATED_OR_MINIFIED_SUFFIXES,
             "generated_or_minified_names": tempo.GENERATED_OR_MINIFIED_NAMES,
