@@ -218,3 +218,7 @@ Ren Diao, co-authored with Claude (Anthropic).
 ## License
 
 [MIT](LICENSE)
+
+## 2mw2lt
+
+Work Tempo is part of [2mw2lt](https://2mw2lt.com) — *Too Much Work, Too Little Time* — a steering partner that coordinates work across AI workers and trusted people. Its sibling [unlimited](https://github.com/endario/unlimited) reads AI-subscription usage.
