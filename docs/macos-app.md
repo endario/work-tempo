@@ -104,7 +104,7 @@ A 430-point popover with a fixed header and footer:
 5. **Monthly Churn** chart: the same six series by calendar month. The current month keeps its full slot but fills only the elapsed fraction.
 6. Footer: remove the selected workspace, quit.
 
-Both charts and the sparklines respond to the pointer with a readout. Hue names the kind (blue code, amber tests, gray docs) and lightness names the direction (additions vs deletions); each step clears 3:1 contrast against its background. The Dock icon is suppressed with `LSUIElement`.
+Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Hue names the kind (blue code, amber tests, gray docs) and lightness names the direction (additions vs deletions); each step clears 3:1 contrast against its background. The Dock icon is suppressed with `LSUIElement`.
 
 ## Errors and empty states
 

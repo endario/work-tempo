@@ -16,9 +16,9 @@ struct MomentumHero: View {
                     let added = self.added(at: index)
                     let removed = self.removed(at: index)
                     return [
-                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added)),
-                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                         HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
+                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
+                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                     ]
                 },
                 help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
@@ -36,10 +36,10 @@ struct MomentumHero: View {
                     let added = self.added(at: index)
                     let removed = self.removed(at: index)
                     return [
-                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added)),
-                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                         HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
-                        HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true),
+                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
+                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
+                        HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true, separated: true),
                     ]
                 },
                 help: "Code and test lines added minus removed over the last \(snapshot.windowDays) closed days. Documentation is counted separately."

@@ -154,7 +154,7 @@ struct SourceVolumeChart: View {
         return [
             HoverRow(id: "code", label: "Code", value: MetricFormatter.compact(code), swatch: TempoPalette.code),
             HoverRow(id: "tests", label: "Tests", value: MetricFormatter.compact(tests), swatch: TempoPalette.tests),
-            HoverRow(id: "source", label: "Source", value: MetricFormatter.compact(code + tests), isTotal: true),
+            HoverRow(id: "source", label: "Source", value: MetricFormatter.compact(code + tests), isTotal: true, separated: true),
             HoverRow(id: "docs", label: "Docs", value: bracketed(docs), swatch: TempoPalette.docs),
         ]
     }
@@ -251,7 +251,7 @@ struct MonthlyChurnChart: View {
                     return min(count - 1, max(0, Int(x.rounded())))
                 },
                 title: { monthTitle(months[$0].label) },
-                columns: ["+", "\u{2212}"],
+                columns: ["Total", "+", "\u{2212}"],
                 rows: hoverRows
             )
         }
@@ -262,34 +262,37 @@ struct MonthlyChurnChart: View {
     private func hoverRows(_ index: Int) -> [HoverRow] {
         let month = months[index]
         return [
-            HoverRow(
-                id: "code",
-                label: "Code",
-                values: [MetricFormatter.compact(month.codeAdded), MetricFormatter.compact(month.codeDeleted)],
-                swatches: [TempoPalette.codeAdded, TempoPalette.codeDeleted]
-            ),
-            HoverRow(
-                id: "tests",
-                label: "Tests",
-                values: [MetricFormatter.compact(month.testAdded), MetricFormatter.compact(month.testDeleted)],
-                swatches: [TempoPalette.testAdded, TempoPalette.testDeleted]
-            ),
-            HoverRow(
-                id: "source",
-                label: "Source",
-                values: [
-                    MetricFormatter.compact(month.codeAdded + month.testAdded),
-                    MetricFormatter.compact(month.codeDeleted + month.testDeleted),
-                ],
-                isTotal: true
-            ),
-            HoverRow(
-                id: "docs",
-                label: "Docs",
-                values: [bracketed(month.docAdded), bracketed(month.docDeleted)],
-                swatches: [TempoPalette.docsAdded, TempoPalette.docsDeleted]
-            ),
+            churnRow(id: "code", label: "Code", added: month.codeAdded, deleted: month.codeDeleted,
+                     swatches: [TempoPalette.codeAdded, TempoPalette.codeDeleted]),
+            churnRow(id: "tests", label: "Tests", added: month.testAdded, deleted: month.testDeleted,
+                     swatches: [TempoPalette.testAdded, TempoPalette.testDeleted]),
+            churnRow(id: "source", label: "Source",
+                     added: month.codeAdded + month.testAdded, deleted: month.codeDeleted + month.testDeleted,
+                     isTotal: true),
+            churnRow(id: "docs", label: "Docs", added: month.docAdded, deleted: month.docDeleted,
+                     swatches: [TempoPalette.docsAdded, TempoPalette.docsDeleted], isDocumentation: true),
         ]
+    }
+
+    /// The total comes first, then the additions and removals it is made of.
+    private func churnRow(
+        id: String,
+        label: String,
+        added: Int,
+        deleted: Int,
+        swatches: [Color] = [],
+        isTotal: Bool = false,
+        isDocumentation: Bool = false
+    ) -> HoverRow {
+        let format: (Int) -> String = { isDocumentation ? bracketed($0) : MetricFormatter.compact($0) }
+        return HoverRow(
+            id: id,
+            label: label,
+            values: [format(added + deleted), format(added), format(deleted)],
+            swatches: swatches,
+            isTotal: isTotal,
+            separated: isTotal
+        )
     }
 
     private var yDomain: ClosedRange<Double> {
@@ -370,17 +373,41 @@ struct HoverRow: Identifiable {
     let values: [String]
     var swatches: [Color] = []
     var isTotal = false
+    /// A rule is drawn above this row.
+    var separated = false
 
-    init(id: String, label: String, value: String, swatch: Color? = nil, isTotal: Bool = false) {
-        self.init(id: id, label: label, values: [value], swatches: swatch.map { [$0] } ?? [], isTotal: isTotal)
+    init(
+        id: String,
+        label: String,
+        value: String,
+        swatch: Color? = nil,
+        isTotal: Bool = false,
+        separated: Bool = false
+    ) {
+        self.init(
+            id: id,
+            label: label,
+            values: [value],
+            swatches: swatch.map { [$0] } ?? [],
+            isTotal: isTotal,
+            separated: separated
+        )
     }
 
-    init(id: String, label: String, values: [String], swatches: [Color] = [], isTotal: Bool = false) {
+    init(
+        id: String,
+        label: String,
+        values: [String],
+        swatches: [Color] = [],
+        isTotal: Bool = false,
+        separated: Bool = false
+    ) {
         self.id = id
         self.label = label
         self.values = values
         self.swatches = swatches
         self.isTotal = isTotal
+        self.separated = separated
     }
 }
 
@@ -474,10 +501,6 @@ struct ChartReadout: View {
         return labelColumn + valueColumn * CGFloat(max(1, columns.count)) + (showsSwatches ? 22 : 12)
     }
 
-    private var firstTotalID: String? {
-        rows.first(where: \.isTotal)?.id
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 2.5) {
             Text(title)
@@ -496,7 +519,7 @@ struct ChartReadout: View {
             }
 
             ForEach(rows) { entry in
-                if entry.id == firstTotalID {
+                if entry.separated {
                     Divider().padding(.vertical, 2)
                 }
                 row(
