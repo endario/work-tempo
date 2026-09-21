@@ -38,8 +38,10 @@ A frozen dataclass built once per run by `load_config(root, explicit_path, no_co
 
 Loading, per layer, **before** merging:
 
-1. Read the layer, check its `schema_version` (accepted: 1 and 2), reject unknown keys with an error naming the key and file, and validate each value with the existing `_string_list` / `_string_dict` / `_extra_repo_list` checks.
-2. Overlay validated layers in order: `defaults.json`, tracked `<root>/.source-tempo.json`, local file or `--config`. A later top-level key replaces the earlier value; lists replace. `schema_version` is not part of the overlay.
+1. Read the layer and check its `schema_version`. A missing `schema_version` means version 1.
+2. Validate keys against that version's allowlist: unknown keys are errors naming the key and file. Version 1 allows today's keys and **rejects** `test_file_markers`; version 2 allows the version-1 keys plus `test_file_markers`.
+3. Validate each value with the existing `_string_list` / `_string_dict` / `_extra_repo_list` checks.
+4. Overlay validated layers in order: `defaults.json`, tracked `<root>/.source-tempo.json`, local file or `--config`. A later top-level key replaces the earlier value; lists replace. A partial version-1 workspace layer may overlay a version-2 defaults layer. `schema_version` is not part of the overlay.
 
 Classification moves onto `Config` as methods: `language_for_path`, `documentation_language_for_path`, `source_kind_for_path`, `is_generated_or_minified`, `should_count_path`, `should_count_documentation_path`, `is_doc_only_repo`, and `signature(include_vendor)`. These are exactly the functions that read the globals today, and they move onto the object that owns the data. A separate `Classifier` type is not added: it would add a type without a second consumer.
 
@@ -47,10 +49,10 @@ Only the orchestration functions that need policy take a `config: Config` parame
 
 ### Schema version 2 and `test_file_markers`
 
-The four infix markers become the config key `test_file_markers`, defaulting to today's values. Adding a counting key under version 1 would let an older installation read a shared `.source-tempo.json`, ignore the key, and report different numbers. So the config schema becomes version 2:
+The four infix markers become the config key `test_file_markers`, defaulting to today's values. Adding a counting key under version 1 would let an older installation read a shared `.source-tempo.json`, ignore the key, and report different numbers. So the key exists only in schema version 2, and a file that declares version 1 (or nothing) and uses the key is rejected, not accepted by a combined allowlist:
 
 - `--init-config` writes `schema_version: 2`.
-- The loader accepts 1 and 2. A version-1 file lacks the key and gets the default, which is the old behaviour.
+- A version-1 file lacks the key and gets the default, which is the old behaviour.
 - An older installation refuses a version-2 file with its existing "unsupported config schema_version" error instead of miscounting.
 
 ### Cache stability
@@ -59,30 +61,34 @@ The four infix markers become the config key `test_file_markers`, defaulting to 
 
 ### Delivery
 
-Two PRs, so the behaviour-preserving slice can be proved exact on its own.
+Three PRs, each provable on its own so a failure is attributable to packaging, the dependency refactor, or the compatibility migration. Each is branched from `main` after the open-source-preparation branch lands; none carries its changes.
 
-1. **Defaults as data, no behaviour change.** Add `defaults.json` (no `report_title`, no `test_file_markers`) and package-data metadata. The existing module constants are populated from it; `default_config_data()` and `--init-config` read it; `examples/source-tempo.json` is deleted. Tests prove exact parity with the pre-change defaults and an unchanged cache signature. CI builds the wheel and sdist, installs each into a clean venv, and runs `source-tempo --init-config` in a temporary repository.
-2. **`Config`, schema v2, strict loading.** Everything in the section above: `Config`, per-layer validation with unknown-key errors, `test_file_markers`, schema version 2, worker pickling, deletion of the globals and `apply_workspace_config`, and test migration off module reloads.
+1. **Defaults as data.** Add `defaults.json` (schema-version-1 keys only; no `report_title`, no `test_file_markers`) and package-data metadata. The existing module constants are populated from it; `default_config_data()` and `--init-config` read it. Delete `examples/source-tempo.json` and update every reference to it (README and `docs/architecture.md`). Add permanent CI that builds the wheel and sdist, installs each into a clean venv, and runs `source-tempo --init-config` in a temporary repository.
+2. **Explicit `Config`, behaviour preserved.** Introduce `Config` and `load_config` with today's loading semantics (schema version 1, merge as it is now), move classification onto it, thread it through the orchestration functions, pass `Config` to workers, delete the globals and `apply_workspace_config`, and migrate tests off module reloads and global assignment.
+3. **Strict, versioned configuration.** Per-layer validation, version-specific key allowlists, unknown-key errors, schema version 2, and `test_file_markers`. Ships with a release note, because older installations will reject version-2 files.
 
 ## Acceptance criteria
 
 PR 1:
 - `defaults.json` loads to exactly the previous constants (asserted against a snapshot of the old values), and the pre-change cache signature is reproduced.
-- The wheel and sdist both contain `defaults.json`, and an installed copy runs `--init-config`.
-- Missing or malformed `defaults.json` produces a clear error.
+- The wheel and sdist both contain `defaults.json`, and an installed copy runs `--init-config`; this runs in CI on every change.
+- The default constants load at import, so a missing or malformed `defaults.json` makes the import fail with a `RuntimeError` naming the file. A test runs the module in a subprocess with the file absent and asserts a non-zero exit and that message on stderr.
 
 PR 2:
 - No default list/dict/set literal remains in `cli.py`, and `git grep -n "^\s*global "` in `src/` is empty.
-- Report JSON for a fixed fixture repository is identical before and after (excluding `generatedAt`), cold and warm cache.
-- The signature payload equals the old payload plus `test_file_markers`, and a test pins the resulting hash.
-- `Config` round-trips through `pickle` and `--workers 2` under `spawn` yields the same report as `--workers 1`.
-- A file with an unknown key, a bad type, or an unsupported `schema_version` in any layer errors before any repository is traversed, and a bad tracked layer cannot be masked by a good local layer.
-- `test_file_markers` is overridable, and a version-1 file still loads.
+- Report JSON for a fixed fixture repository is identical before and after (excluding `generatedAt`), cold and warm cache, and the cache signature is unchanged.
+- `Config` round-trips through `pickle`, and `--workers 2` under the `spawn` start method yields the same report as `--workers 1`.
 - Tests contain no module reloads for config and no assignments to policy globals.
+
+PR 3:
+- Every combination in the version matrix behaves as specified: missing version, v1 with `test_file_markers` (rejected), v2 with it, v1 layer over v2 defaults, and a bad tracked layer that a good local layer cannot mask. Errors occur before any repository is traversed.
+- Unknown keys, bad types, and unsupported versions in any layer are errors.
+- The signature payload equals the old payload plus `test_file_markers`, and a test pins the resulting hash.
+- `test_file_markers` is overridable.
 
 ## Decisions taken
 
 - Unknown config keys are errors, not warnings, since a silent typo corrupts a metrics tool.
 - `examples/source-tempo.json` is deleted rather than kept in sync by a test.
-- Classification lives on `Config`, without a separate `Classifier`.
+- Classification lives on `Config`, without a separate `Classifier` or nested config types.
 - `source_kinds` (`code`, `test`) stay in code: they are part of the report contract.
