@@ -1302,6 +1302,13 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertGreater(serial["series"]["loc"][-1], 0)
             self.assertEqual(serial, run_report(2))
 
+            (repo / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({"language_by_ext": {".py": "Snake"}}), encoding="utf-8"
+            )
+            overlaid = run_report(1)
+            self.assertIn("Snake", json.dumps(overlaid))
+            self.assertEqual(overlaid, run_report(2))
+
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
         tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")
         config = dataclasses.replace(
