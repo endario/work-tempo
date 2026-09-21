@@ -1357,6 +1357,31 @@ class LocAnalysisScriptTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "schema_version"):
                 tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
 
+    def test_invalid_value_in_a_tracked_layer_is_not_masked_by_a_local_layer(self) -> None:
+        tempo = load_script("tempo_value_masking_test", "src/source_tempo/cli.py")
+        bad_tracked = {
+            "test_dir_names": "checks",
+            "report_title": 7,
+            "language_by_ext": ["py"],
+            "extra_repos": [{"label": "x"}],
+        }
+        good_local = {
+            "test_dir_names": ["checks"],
+            "report_title": "Personal",
+            "language_by_ext": {".py": "Python"},
+            "extra_repos": [],
+        }
+        for key, value in bad_tracked.items():
+            with self.subTest(key=key), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / tempo.CONFIG_FILENAME).write_text(json.dumps({key: value}), encoding="utf-8")
+                (root / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                    json.dumps({key: good_local[key]}), encoding="utf-8"
+                )
+                layers = tempo.load_workspace_config_layers(root)
+                with self.assertRaisesRegex(ValueError, rf"{key}.*{tempo.CONFIG_FILENAME}"):
+                    tempo.build_config(tempo.load_packaged_defaults(), layers, "Fixture")
+
     def test_v1_layer_may_overlay_v2_defaults(self) -> None:
         tempo = load_script("tempo_v1_over_v2_test", "src/source_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:

@@ -150,8 +150,27 @@ def load_workspace_config_layers(
     return [(path, load_workspace_config(path)) for path in paths if path.exists()]
 
 
+def _report_title_value(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    return value
+
+
+_VALUE_CHECKS = {
+    "report_title": _report_title_value,
+    "language_by_ext": _string_dict,
+    "documentation_by_ext": _string_dict,
+    "language_by_name": _string_dict,
+    "extra_repos": _extra_repo_list,
+}
+
+
 def validate_layer(raw: dict, source: object) -> dict:
-    """Check one layer against the keys its declared schema version allows; drop `schema_version`."""
+    """Check one layer's keys and values against its declared schema version; drop `schema_version`.
+
+    Values are checked here, per layer, so an invalid value cannot be hidden by a later layer that
+    replaces the same key.
+    """
     version = raw.get("schema_version", 1)
     if type(version) is not int or version not in SUPPORTED_CONFIG_VERSIONS:
         raise ValueError(f"unsupported config schema_version {version!r} in {source}")
@@ -163,6 +182,11 @@ def validate_layer(raw: dict, source: object) -> dict:
         if key in CONFIG_KEYS_V2:
             raise ValueError(f"config key {key!r} in {source} requires schema_version 2")
         raise ValueError(f"unknown config key {key!r} in {source}")
+    for key, value in layer.items():
+        try:
+            _VALUE_CHECKS.get(key, _string_list)(value, key)
+        except ValueError as exc:
+            raise ValueError(f"{exc} in {source}") from exc
     return layer
 
 
@@ -300,8 +324,6 @@ def build_config(defaults: dict, layers: list[tuple[object, dict]], report_title
     for source, layer in layers:
         raw.update(validate_layer(layer, source))
     if "report_title" in raw:
-        if not isinstance(raw["report_title"], str):
-            raise ValueError("report_title must be a string")
         report_title = raw["report_title"]
 
     def strings(key: str) -> list[str]:
