@@ -1,4 +1,4 @@
-import SourceTempoCore
+import WorkTempoCore
 import SwiftUI
 
 struct MenuBarLabel: View {

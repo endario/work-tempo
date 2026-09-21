@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 import Foundation
-import SourceTempoCore
+import WorkTempoCore
 
 @MainActor
 final class AppModel: ObservableObject {

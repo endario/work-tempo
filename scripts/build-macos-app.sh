@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/dist/SourceTempo.app"
+APP="$ROOT/dist/WorkTempo.app"
 INSTALL=false
 
 case "${1:-}" in
@@ -16,8 +16,8 @@ BIN_DIR="$(swift build --package-path "$ROOT/macos" -c release --arch arm64 --sh
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-ditto "$BIN_DIR/SourceTempo" "$APP/Contents/MacOS/SourceTempo"
-ditto "$ROOT/macos/Assets/SourceTempo.icns" "$APP/Contents/Resources/SourceTempo.icns"
+ditto "$BIN_DIR/WorkTempo" "$APP/Contents/MacOS/WorkTempo"
+ditto "$ROOT/macos/Assets/WorkTempo.icns" "$APP/Contents/Resources/WorkTempo.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,15 +27,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>SourceTempo</string>
+  <string>WorkTempo</string>
   <key>CFBundleIdentifier</key>
-  <string>io.github.endario.SourceTempo</string>
+  <string>io.github.endario.WorkTempo</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleIconFile</key>
-  <string>SourceTempo.icns</string>
+  <string>WorkTempo.icns</string>
   <key>CFBundleName</key>
-  <string>SourceTempo</string>
+  <string>WorkTempo</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -55,9 +55,9 @@ PLIST
 codesign --force --sign - --timestamp=none "$APP"
 
 if $INSTALL; then
-  rm -rf /Applications/SourceTempo.app
-  ditto "$APP" /Applications/SourceTempo.app
-  echo "Installed /Applications/SourceTempo.app"
+  rm -rf /Applications/WorkTempo.app
+  ditto "$APP" /Applications/WorkTempo.app
+  echo "Installed /Applications/WorkTempo.app"
 else
   echo "Built $APP"
 fi

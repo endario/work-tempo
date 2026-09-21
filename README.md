@@ -1,6 +1,6 @@
-# Source Tempo
+# Work Tempo
 
-Source Tempo tracks source-code momentum across a Git workspace and its related repositories. It produces terminal summaries, a self-contained HTML report, and optional schema-versioned JSON for other local tools.
+Work Tempo tracks source-code momentum across a Git workspace and its related repositories. It produces terminal summaries, a self-contained HTML report, and optional schema-versioned JSON for other local tools.
 
 It measures:
 
@@ -12,22 +12,26 @@ It measures:
 
 The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing closed days, up to thirty. An individual workspace remains selectable from the header.
 
-Repository comparison and component classification are outside Source Tempo's scope.
+Repository comparison and component classification are outside Work Tempo's scope.
 
 ## Requirements
 
 - Python 3.10 or newer.
 - Git 2.30 or newer.
 
-Source Tempo has no Python runtime dependencies outside the standard library.
+Work Tempo has no Python runtime dependencies outside the standard library.
 
 ## Install
+
+```bash
+pipx install work-tempo   # or: pip install work-tempo
+```
 
 For local development:
 
 ```bash
-git clone https://github.com/endario/source-tempo.git
-cd source-tempo
+git clone https://github.com/endario/work-tempo.git
+cd work-tempo
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
@@ -35,19 +39,19 @@ python3 -m venv .venv
 Then run it from any Git repository:
 
 ```bash
-source-tempo
+work-tempo
 ```
 
 The current directory is the default workspace. Analyze another checkout with:
 
 ```bash
-source-tempo --root ~/projects/my-app
+work-tempo --root ~/projects/my-app
 ```
 
 Without installation, use:
 
 ```bash
-PYTHONPATH=src python3 -m source_tempo --root ~/projects/my-app
+PYTHONPATH=src python3 -m work_tempo --root ~/projects/my-app
 ```
 
 ## Reports
@@ -56,43 +60,43 @@ The default report covers the latest 18 monthly periods and writes HTML under th
 
 ```bash
 # Monthly history with explicit outputs
-source-tempo --root ~/projects/my-app \
-  --html /tmp/source-tempo.html \
-  --json /tmp/source-tempo.json
+work-tempo --root ~/projects/my-app \
+  --html /tmp/work-tempo.html \
+  --json /tmp/work-tempo.json
 
 # Daily view for the latest 30 days
-source-tempo --root ~/projects/my-app --period day --days 30
+work-tempo --root ~/projects/my-app --period day --days 30
 
 # Terminal and JSON only
-source-tempo --root ~/projects/my-app --no-html --json /tmp/source-tempo.json
+work-tempo --root ~/projects/my-app --no-html --json /tmp/work-tempo.json
 
 # Optional three-month LOC forecast using the last six completed months
-source-tempo --root ~/projects/my-app --forecast
+work-tempo --root ~/projects/my-app --forecast
 ```
 
 Period boundaries use the active system timezone, falling back to UTC. The resolved timezone is included in JSON and HTML report metadata.
 
 ## Workspace Scope
 
-Source Tempo always considers the parent Git repository. It also discovers usable initialized submodules declared in `.gitmodules` and can aggregate additional repositories configured outside the workspace.
+Work Tempo always considers the parent Git repository. It also discovers usable initialized submodules declared in `.gitmodules` and can aggregate additional repositories configured outside the workspace.
 
 Create a personal configuration:
 
 ```bash
-source-tempo --root ~/projects/my-app --init-config
+work-tempo --root ~/projects/my-app --init-config
 ```
 
-This writes `~/projects/my-app/.source-tempo.local.json`, which should remain untracked. For shared workspace policy, generate or maintain `~/projects/my-app/.source-tempo.json` instead.
+This writes `~/projects/my-app/.work-tempo.local.json`, which should remain untracked. For shared workspace policy, generate or maintain `~/projects/my-app/.work-tempo.json` instead.
 
 Configuration layers are applied in this order:
 
 1. Built-in generic defaults.
-2. Tracked `.source-tempo.json`.
-3. Untracked `.source-tempo.local.json`, or the file passed with `--config`.
+2. Tracked `.work-tempo.json`.
+3. Untracked `.work-tempo.local.json`, or the file passed with `--config`.
 
 Later keys replace earlier keys. Arrays replace rather than append. Each file is validated on its own before merging: an unknown key, a wrong type, or an unsupported `schema_version` is an error that names the key and file, so a typo cannot silently change the numbers.
 
-Config files declare `"schema_version": 1` or `2` (missing means 1). `test_file_markers`, the filename infixes that mark a test file, needs version 2; `--init-config` writes version 2. A version-2 file is rejected by older releases instead of being miscounted. Existing caches are recomputed once after upgrading. Run `source-tempo --init-config` to write every supported field with its default, or read [src/source_tempo/defaults.json](src/source_tempo/defaults.json).
+Config files declare `"schema_version": 1` or `2` (missing means 1). `test_file_markers`, the filename infixes that mark a test file, needs version 2; `--init-config` writes version 2. A version-2 file is rejected by older releases instead of being miscounted. Existing caches are recomputed once after upgrading. Run `work-tempo --init-config` to write every supported field with its default, or read [src/work_tempo/defaults.json](src/work_tempo/defaults.json).
 
 Additional repositories use paths relative to the main checkout:
 
@@ -118,7 +122,7 @@ Only actual Git repository roots are counted. Missing or uninitialized configure
 
 LOC snapshots count newline-delimited tracked source files from the last commit available at each period cutoff. Source and tests are separated using conventional test directories and test/spec/e2e filename patterns.
 
-Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same current counting policy. Blank lines and comments count because SourceTempo measures physical source lines rather than semantic SLOC.
+Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same current counting policy. Blank lines and comments count because WorkTempo measures physical source lines rather than semantic SLOC.
 
 Generated, minified, dependency, build, cache, scratch, and vendor-like paths are excluded by default. Documentation is counted separately and does not contribute to source LOC, growth, or churn metrics.
 
@@ -127,20 +131,20 @@ Generated, minified, dependency, build, cache, scratch, and vendor-like paths ar
 On macOS, artifacts default to:
 
 ```text
-~/Library/Caches/SourceTempo/<workspace-name>-<workspace-key>/
+~/Library/Caches/WorkTempo/<workspace-name>-<workspace-key>/
 ```
 
-Linux uses `$XDG_CACHE_HOME/source-tempo` or `~/.cache/source-tempo`. Set `SOURCE_TEMPO_CACHE_HOME` to override the root.
+Linux uses `$XDG_CACHE_HOME/work-tempo` or `~/.cache/work-tempo`. Set `WORK_TEMPO_CACHE_HOME` to override the root.
 
 ```bash
 # Rebuild the workspace cache
-source-tempo --clear-cache
+work-tempo --clear-cache
 
 # Run without reading or writing a cache
-source-tempo --no-cache
+work-tempo --no-cache
 
 # Use an explicit cache file
-source-tempo --cache /tmp/source-tempo-cache.json
+work-tempo --cache /tmp/work-tempo-cache.json
 ```
 
 Snapshot cache entries include the commit and effective counting policy. Churn entries also include period kind and timezone. Rewritten history triggers a full churn rescan.
@@ -158,33 +162,33 @@ python3 -m compileall -q src tests
 
 ### macOS menu-bar app
 
-The local app requires macOS 14 or newer on Apple Silicon, Swift 6, and an installed `source-tempo` CLI. It resolves the collector from `~/.local/bin`, Homebrew locations, and then `PATH`.
+The local app requires macOS 14 or newer on Apple Silicon, Swift 6, and an installed `work-tempo` CLI. It resolves the collector from `~/.local/bin`, Homebrew locations, and then `PATH`.
 
 Build an ad-hoc signed app bundle:
 
 ```bash
 scripts/build-macos-app.sh
-open dist/SourceTempo.app
+open dist/WorkTempo.app
 ```
 
 Install the local build in `/Applications`:
 
 ```bash
 scripts/build-macos-app.sh --install
-open /Applications/SourceTempo.app
+open /Applications/WorkTempo.app
 ```
 
-Use the plus button to add individual Git repository roots. Each workspace keeps its own `.source-tempo.json` and `.source-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Both charts keep code and test activity above the axis and informational documentation below it.
+Use the plus button to add individual Git repository roots. Each workspace keeps its own `.work-tempo.json` and `.work-tempo.local.json` counting policy. The default All Workspaces scope rejects overlapping reports and mixed timezones. Historical metrics share a common closed-day watermark, while current totals use each contributing report's latest snapshot. Both charts keep code and test activity above the axis and informational documentation below it.
 
 The app renders saved reports immediately. Collection is sequential, skips unattended work in Low Power Mode, uses two workers, and checkpoints the collector cache so an interrupted history extension can resume.
 
 App state and saved reports live under:
 
 ```text
-~/Library/Application Support/SourceTempo/
+~/Library/Application Support/WorkTempo/
 ```
 
-The collector's existing cache remains under `~/Library/Caches/SourceTempo/`, shared with terminal runs. Removing a workspace from the app does not alter its source repository. To uninstall, quit SourceTempo and remove `/Applications/SourceTempo.app`; remove the Application Support directory separately only when its saved workspace list and reports are no longer wanted.
+The collector's existing cache remains under `~/Library/Caches/WorkTempo/`, shared with terminal runs. Removing a workspace from the app does not alter its source repository. To uninstall, quit WorkTempo and remove `/Applications/WorkTempo.app`; remove the Application Support directory separately only when its saved workspace list and reports are no longer wanted.
 
 Swift development checks:
 
@@ -198,6 +202,10 @@ swift build -c release
 
 - [Architecture](docs/architecture.md): the collector, configuration, counting model, and cache.
 - [macOS app](docs/macos-app.md): scheduling, aggregation, and metric definitions.
+
+## Releasing
+
+Bump `version` in `pyproject.toml` in a pull request and merge it, then tag the merge commit `vX.Y.Z` and push the tag. The Publish workflow builds the package and uploads it to PyPI by trusted publishing, with no stored token.
 
 ## Contributing
 

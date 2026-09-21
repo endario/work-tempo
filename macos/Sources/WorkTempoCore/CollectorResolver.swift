@@ -7,9 +7,9 @@ public enum CollectorResolutionError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case let .explicitNotExecutable(path):
-            "Configured SourceTempo collector is not executable: \(path)"
+            "Configured WorkTempo collector is not executable: \(path)"
         case let .notFound(searched):
-            "SourceTempo collector not found. Searched: \(searched.joined(separator: ", "))"
+            "WorkTempo collector not found. Searched: \(searched.joined(separator: ", "))"
         }
     }
 }
@@ -24,8 +24,8 @@ public struct CollectorResolver {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         environmentPath: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
         fixedCandidates: [URL] = [
-            URL(fileURLWithPath: "/opt/homebrew/bin/source-tempo"),
-            URL(fileURLWithPath: "/usr/local/bin/source-tempo"),
+            URL(fileURLWithPath: "/opt/homebrew/bin/work-tempo"),
+            URL(fileURLWithPath: "/usr/local/bin/work-tempo"),
         ],
         isExecutable: @escaping (URL) -> Bool = {
             FileManager.default.isExecutableFile(atPath: $0.path)
@@ -45,11 +45,11 @@ public struct CollectorResolver {
             return explicit
         }
 
-        var searched = [homeDirectory.appending(path: ".local/bin/source-tempo")]
+        var searched = [homeDirectory.appending(path: ".local/bin/work-tempo")]
         searched.append(contentsOf: fixedCandidates)
         searched.append(contentsOf: environmentPath
             .split(separator: ":")
-            .map { URL(fileURLWithPath: String($0)).appending(path: "source-tempo") })
+            .map { URL(fileURLWithPath: String($0)).appending(path: "work-tempo") })
 
         if let found = searched.first(where: isExecutable) {
             return found

@@ -1,5 +1,5 @@
 import Charts
-import SourceTempoCore
+import WorkTempoCore
 import SwiftUI
 
 struct MomentumHero: View {

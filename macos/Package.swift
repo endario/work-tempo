@@ -3,18 +3,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "SourceTempoMac",
+    name: "WorkTempoMac",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "SourceTempoCore", targets: ["SourceTempoCore"]),
-        .executable(name: "SourceTempo", targets: ["SourceTempoMenuBar"]),
+        .library(name: "WorkTempoCore", targets: ["WorkTempoCore"]),
+        .executable(name: "WorkTempo", targets: ["WorkTempoMenuBar"]),
     ],
     targets: [
-        .target(name: "SourceTempoCore"),
+        .target(name: "WorkTempoCore"),
         .executableTarget(
-            name: "SourceTempoMenuBar",
-            dependencies: ["SourceTempoCore"]
+            name: "WorkTempoMenuBar",
+            dependencies: ["WorkTempoCore"]
         ),
-        .testTarget(name: "SourceTempoCoreTests", dependencies: ["SourceTempoCore"]),
+        .testTarget(name: "WorkTempoCoreTests", dependencies: ["WorkTempoCore"]),
     ]
 )

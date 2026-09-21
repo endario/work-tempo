@@ -1,10 +1,10 @@
 # Architecture
 
-Source Tempo has two parts: a Python collector that does all Git traversal and counting, and an optional macOS menu-bar app that reads the collector's JSON reports. See [macos-app.md](macos-app.md) for the app.
+Work Tempo has two parts: a Python collector that does all Git traversal and counting, and an optional macOS menu-bar app that reads the collector's JSON reports. See [macos-app.md](macos-app.md) for the app.
 
 ## Purpose
 
-Source Tempo tracks source-code momentum across one Git workspace and any related repositories. It reports source and test LOC snapshots, language composition, monthly or daily churn, and documentation activity. Documentation is informational and never counts toward source LOC, growth, or churn.
+Work Tempo tracks source-code momentum across one Git workspace and any related repositories. It reports source and test LOC snapshots, language composition, monthly or daily churn, and documentation activity. Documentation is informational and never counts toward source LOC, growth, or churn.
 
 The questions it answers: is authored source growing, how much work is replacing existing code, and which repositories and languages account for the movement.
 
@@ -24,8 +24,8 @@ It deliberately does not own repository comparison, component taxonomy, remote a
 ## Layout
 
 ```text
-src/source_tempo/
-  __main__.py     python -m source_tempo
+src/work_tempo/
+  __main__.py     python -m work_tempo
   cli.py          collector, cache, report model, HTML renderer
   defaults.json   default rules (package data)
 tests/test_cli.py
@@ -33,7 +33,7 @@ macos/            menu-bar app (Swift package)
 scripts/build-macos-app.sh
 ```
 
-`source-tempo` and `python -m source_tempo` both call `source_tempo.cli.main`. The collector uses only the Python standard library and the `git` executable (Python 3.10+, Git 2.30+).
+`work-tempo` and `python -m work_tempo` both call `work_tempo.cli.main`. The collector uses only the Python standard library and the `git` executable (Python 3.10+, Git 2.30+).
 
 The collector is one module on purpose. Split it when a focused test seam or real internal reuse calls for it; a second consumer of the JSON report is not a reason to reorganize it, because consumers talk to it across a process boundary.
 
@@ -42,12 +42,12 @@ The collector is one module on purpose. Split it when a focused test seam or rea
 The CLI analyzes the current directory, or `--root` for another checkout. Configuration is layered:
 
 1. Built-in generic defaults.
-2. Tracked `<root>/.source-tempo.json`, the shared workspace policy.
-3. Untracked `<root>/.source-tempo.local.json` for personal overrides.
+2. Tracked `<root>/.work-tempo.json`, the shared workspace policy.
+3. Untracked `<root>/.work-tempo.local.json` for personal overrides.
 
 `--config` replaces the local layer but the tracked layer still loads. `--no-config` disables both. Layers are validated one at a time, then merged per top-level key: a later key replaces the earlier value, and lists replace rather than append. Validation is version-specific: a file declaring `schema_version` 1 (or none) may use only the version-1 keys, and version 2 adds `test_file_markers`. Unknown keys and unsupported versions are errors.
 
-`--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [src/source_tempo/defaults.json](../src/source_tempo/defaults.json) is the single source of the defaults and shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
+`--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [src/work_tempo/defaults.json](../src/work_tempo/defaults.json) is the single source of the defaults and shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
 
 Counting policy belongs to the workspace being measured. It is a `Config` built once per run from `defaults.json` plus the layers above and passed to the functions that count, including the worker processes.
 
@@ -60,7 +60,7 @@ Each layer declares `schema_version` (missing means 1) and is checked against th
 | 1 or missing | the keys in `defaults.json` except `test_file_markers` |
 | 2 | all keys, including `test_file_markers` |
 
-A key that changes counting is only accepted under a version that older releases reject. Otherwise an older release would read the same shared `.source-tempo.json`, ignore the key, and report different numbers. A version-1 file may overlay the version-2 packaged defaults. The packaged defaults must declare the newest supported version, which `--init-config` writes.
+A key that changes counting is only accepted under a version that older releases reject. Otherwise an older release would read the same shared `.work-tempo.json`, ignore the key, and report different numbers. A version-1 file may overlay the version-2 packaged defaults. The packaged defaults must declare the newest supported version, which `--init-config` writes.
 
 ## Counting model
 
@@ -96,11 +96,11 @@ Artifacts live under a per-workspace directory in the platform cache root:
 
 | Platform | Root |
 | --- | --- |
-| macOS | `~/Library/Caches/SourceTempo` |
-| Linux | `$XDG_CACHE_HOME/source-tempo` or `~/.cache/source-tempo` |
-| Windows | `%LOCALAPPDATA%\SourceTempo\Cache` |
+| macOS | `~/Library/Caches/WorkTempo` |
+| Linux | `$XDG_CACHE_HOME/work-tempo` or `~/.cache/work-tempo` |
+| Windows | `%LOCALAPPDATA%\WorkTempo\Cache` |
 
-`SOURCE_TEMPO_CACHE_HOME` overrides the root. The directory is `<workspace-name>-<hash>`, where the hash covers the canonical root path and Git directory, so simultaneous workspaces never overwrite each other and analyzed repositories are never written to. `cache.json` and `report.html` sit side by side.
+`WORK_TEMPO_CACHE_HOME` overrides the root. The directory is `<workspace-name>-<hash>`, where the hash covers the canonical root path and Git directory, so simultaneous workspaces never overwrite each other and analyzed repositories are never written to. `cache.json` and `report.html` sit side by side.
 
 What keeps the cache correct:
 

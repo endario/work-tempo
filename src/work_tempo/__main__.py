@@ -1,4 +1,4 @@
-from source_tempo.cli import main
+from work_tempo.cli import main
 
 
 if __name__ == "__main__":

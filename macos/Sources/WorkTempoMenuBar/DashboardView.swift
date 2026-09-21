@@ -1,4 +1,4 @@
-import SourceTempoCore
+import WorkTempoCore
 import SwiftUI
 
 struct DashboardView: View {
@@ -29,7 +29,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             // Measured at 2x: mixed text sizes need a one-point optical lift against SF Symbols.
-            Text("Source Tempo")
+            Text("Work Tempo")
                 .font(.system(size: 15, weight: .semibold))
                 .fixedSize()
                 .frame(height: 24)
@@ -191,7 +191,7 @@ struct DashboardView: View {
             Button("Remove", systemImage: "minus.circle", action: onRemove)
                 .disabled(model.selectedWorkspace == nil)
             Spacer()
-            Button("Quit Source Tempo", action: onQuit)
+            Button("Quit Work Tempo", action: onQuit)
                 .keyboardShortcut("q")
         }
         .buttonStyle(.plain)

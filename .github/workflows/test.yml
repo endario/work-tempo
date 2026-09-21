@@ -53,7 +53,7 @@ jobs:
             "$RUNNER_TEMP/venv/bin/pip" install --quiet "$artifact"
             work="$(mktemp -d)"
             git init --quiet "$work"
-            "$RUNNER_TEMP/venv/bin/source-tempo" --root "$work" --init-config
-            test -s "$work/.source-tempo.local.json"
+            "$RUNNER_TEMP/venv/bin/work-tempo" --root "$work" --init-config
+            test -s "$work/.work-tempo.local.json"
             rm -rf "$RUNNER_TEMP/venv" "$work"
           done

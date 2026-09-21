@@ -56,7 +56,7 @@ public actor CollectorClient {
         )
 
         let diagnosticURL = FileManager.default.temporaryDirectory
-            .appending(path: "source-tempo-\(UUID().uuidString).stderr")
+            .appending(path: "work-tempo-\(UUID().uuidString).stderr")
         FileManager.default.createFile(atPath: diagnosticURL.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: diagnosticURL) }
 

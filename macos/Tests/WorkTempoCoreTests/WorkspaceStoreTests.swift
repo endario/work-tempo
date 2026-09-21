@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class WorkspaceStoreTests: XCTestCase {
     func testWorkspaceCanonicalizesRootAndUsesDirectoryName() throws {

@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class CollectorContractTests: XCTestCase {
     func testPythonCollectorOutputDecodesAsSwiftReport() async throws {
@@ -18,13 +18,13 @@ final class CollectorContractTests: XCTestCase {
         try run("/usr/bin/git", ["-C", fixture.path, "add", "Tempo.swift"])
         try run("/usr/bin/git", [
             "-C", fixture.path,
-            "-c", "user.name=SourceTempo Test",
-            "-c", "user.email=source-tempo@example.invalid",
+            "-c", "user.name=WorkTempo Test",
+            "-c", "user.email=work-tempo@example.invalid",
             "commit", "--quiet", "-m", "fixture",
         ])
 
-        let executable = fixture.appending(path: "source-tempo")
-        try Data("#!/bin/sh\nexec /usr/bin/env python3 -m source_tempo \"$@\"\n".utf8).write(to: executable)
+        let executable = fixture.appending(path: "work-tempo")
+        try Data("#!/bin/sh\nexec /usr/bin/env python3 -m work_tempo \"$@\"\n".utf8).write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         let workspace = try Workspace(root: fixture)
         let output = fixture.appending(path: "report.json")

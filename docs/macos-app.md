@@ -1,21 +1,21 @@
 # macOS Menu-Bar App
 
-A native menu-bar client for the collector, showing source momentum across several independent Git workspaces. The collector owns Git traversal and metric definitions; the app invokes the installed `source-tempo` CLI and reads its schema-versioned JSON. See [architecture.md](architecture.md) for the collector.
+A native menu-bar client for the collector, showing source momentum across several independent Git workspaces. The collector owns Git traversal and metric definitions; the app invokes the installed `work-tempo` CLI and reads its schema-versioned JSON. See [architecture.md](architecture.md) for the collector.
 
-Requirements: macOS 14+, Apple Silicon, Swift 6, and a `source-tempo` executable. Build and install steps are in the [README](../README.md).
+Requirements: macOS 14+, Apple Silicon, Swift 6, and a `work-tempo` executable. Build and install steps are in the [README](../README.md).
 
 ## Design choices
 
-- **Native SwiftUI over the existing CLI**, rather than a Python status-bar app or a Tauri/Electron shell. `MenuBarExtra`, Swift Charts, native file selection, and platform storage give the smallest native surface, and the report JSON is the only contract between the two halves. The cost is a dependency on an installed `source-tempo`, which the app diagnoses explicitly.
+- **Native SwiftUI over the existing CLI**, rather than a Python status-bar app or a Tauri/Electron shell. `MenuBarExtra`, Swift Charts, native file selection, and platform storage give the smallest native surface, and the report JSON is the only contract between the two halves. The cost is a dependency on an installed `work-tempo`, which the app diagnoses explicitly.
 - **Collection runs inside the app**, not in a separate `launchd` agent. A second installed component and a refresh control path aren't worth it yet; the collector boundary keeps that option open.
-- **Per-workspace reports, aggregated in memory**, rather than one combined collector invocation. A combined run applies one root's counting policy to every repository, so it would erase each workspace's own `.source-tempo.json`. Per-workspace reports stay the auditable source.
+- **Per-workspace reports, aggregated in memory**, rather than one combined collector invocation. A combined run applies one root's counting policy to every repository, so it would erase each workspace's own `.work-tempo.json`. Per-workspace reports stay the auditable source.
 - **Individual Git roots only.** A parent directory of checkouts is represented by adding each Git root. The collector remains responsible for each root's configuration, submodules, and extra repositories.
 
 ## Structure
 
 ```text
 macos/Sources/
-  SourceTempoCore/        pure logic, no SwiftUI or AppKit
+  WorkTempoCore/        pure logic, no SwiftUI or AppKit
     ReportDocument        schema-version-1 report decoding
     MomentumSummary       headline math for one report (MomentumInput)
     PortfolioMomentum     aggregation across workspaces, chart timeline
@@ -23,17 +23,17 @@ macos/Sources/
     CollectorResolver, CollectorClient               find and run the CLI
     RefreshCoordinator    scheduling policy
     DashboardSnapshot     view-ready state
-  SourceTempoMenuBar/     app lifecycle and presentation
+  WorkTempoMenuBar/     app lifecycle and presentation
     AppModel, DashboardView, MomentumHero, ChurnCharts, MenuBarLabel, DebugPreview
 ```
 
 Executable discovery and process execution are separate types so a bundled collector only replaces resolution policy. Clock and process abstractions make scheduling, single-flight behavior, timeouts, wake refresh, and staleness testable without SwiftUI. The Swift package depends only on Apple frameworks.
 
-`DebugPreview` is compiled only in debug builds. With `SOURCE_TEMPO_PREVIEW=1` it renders the dashboard in an ordinary window for deterministic screenshots.
+`DebugPreview` is compiled only in debug builds. With `WORK_TEMPO_PREVIEW=1` it renders the dashboard in an ordinary window for deterministic screenshots.
 
 ## Workspaces and state
 
-A workspace is identified by its canonical Git root, and the same root cannot be added twice. Its display name is the root directory name. State lives under `~/Library/Application Support/SourceTempo/`:
+A workspace is identified by its canonical Git root, and the same root cannot be added twice. Its display name is the root directory name. State lives under `~/Library/Application Support/WorkTempo/`:
 
 - `workspaces.json`: schema version 1, ordered roots, the selected scope (`selectedScope`: `all` or a root path), and `selectedRoot` for older readers. Written atomically. State without `selectedScope` opens on All Workspaces.
 - `Reports/<digest of root>.json`: the last successful raw report for each workspace.
@@ -45,7 +45,7 @@ In memory the scope is a `DisplayScope` enum, `all` or `workspace(Workspace)`. R
 For a workspace the app runs:
 
 ```text
-source-tempo --root <root> --period day --days 185 --workers 2 --no-html --json <report-path>
+work-tempo --root <root> --period day --days 185 --workers 2 --no-html --json <report-path>
 ```
 
 The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then the inherited `PATH`; fixed user locations win over an ambient GUI `PATH`. Collection never runs on the main actor, and stdout/stderr are bounded in memory.

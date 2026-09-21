@@ -1,13 +1,13 @@
 import Foundation
 import XCTest
-@testable import SourceTempoCore
+@testable import WorkTempoCore
 
 final class CollectorResolverTests: XCTestCase {
     func testResolutionPrefersExplicitThenHomeThenFixedThenPath() throws {
         let home = URL(fileURLWithPath: "/home/tester")
-        let homeCandidate = home.appending(path: ".local/bin/source-tempo")
-        let fixed = URL(fileURLWithPath: "/fixed/source-tempo")
-        let path = URL(fileURLWithPath: "/ambient/source-tempo")
+        let homeCandidate = home.appending(path: ".local/bin/work-tempo")
+        let fixed = URL(fileURLWithPath: "/fixed/work-tempo")
+        let path = URL(fileURLWithPath: "/ambient/work-tempo")
         var available = Set([homeCandidate.path, fixed.path, path.path])
         let resolver = CollectorResolver(
             homeDirectory: home,
@@ -24,7 +24,7 @@ final class CollectorResolverTests: XCTestCase {
         available.remove(fixed.path)
         XCTAssertEqual(try resolver.resolve(), path)
 
-        let explicit = URL(fileURLWithPath: "/chosen/source-tempo")
+        let explicit = URL(fileURLWithPath: "/chosen/work-tempo")
         available.insert(explicit.path)
         XCTAssertEqual(try resolver.resolve(explicit: explicit), explicit)
     }
@@ -34,9 +34,9 @@ final class CollectorResolverTests: XCTestCase {
             homeDirectory: URL(fileURLWithPath: "/home/tester"),
             environmentPath: "/ambient",
             fixedCandidates: [],
-            isExecutable: { $0.path == "/ambient/source-tempo" }
+            isExecutable: { $0.path == "/ambient/work-tempo" }
         )
-        let explicit = URL(fileURLWithPath: "/missing/source-tempo")
+        let explicit = URL(fileURLWithPath: "/missing/work-tempo")
 
         XCTAssertThrowsError(try resolver.resolve(explicit: explicit)) { error in
             XCTAssertEqual(error as? CollectorResolutionError, .explicitNotExecutable(explicit.path))
@@ -47,7 +47,7 @@ final class CollectorResolverTests: XCTestCase {
         let resolver = CollectorResolver(
             homeDirectory: URL(fileURLWithPath: "/home/tester"),
             environmentPath: "/ambient-one:/ambient-two",
-            fixedCandidates: [URL(fileURLWithPath: "/fixed/source-tempo")],
+            fixedCandidates: [URL(fileURLWithPath: "/fixed/work-tempo")],
             isExecutable: { _ in false }
         )
 
@@ -56,10 +56,10 @@ final class CollectorResolverTests: XCTestCase {
                 return XCTFail("Expected a not-found error")
             }
             XCTAssertEqual(searched, [
-                "/home/tester/.local/bin/source-tempo",
-                "/fixed/source-tempo",
-                "/ambient-one/source-tempo",
-                "/ambient-two/source-tempo",
+                "/home/tester/.local/bin/work-tempo",
+                "/fixed/work-tempo",
+                "/ambient-one/work-tempo",
+                "/ambient-two/work-tempo",
             ])
         }
     }
