@@ -52,161 +52,44 @@ REPORT_TITLE = "SourceTempo"
 FORECAST_MONTHS = 3
 FORECAST_SLOPE_WINDOW_MONTHS = 6
 
-# Extension -> language label. Only extensions listed here count as "code".
-# Markdown, JSON, YAML, TOML, and similar config/doc formats are intentionally
-# excluded so the numbers reflect source code, not docs.
-LANGUAGE_BY_EXT: dict[str, str] = {
-    ".kt": "Kotlin", ".kts": "Kotlin",
-    ".java": "Java",
-    ".py": "Python", ".pyi": "Python",
-    ".ts": "TypeScript", ".tsx": "TypeScript",
-    ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
-    ".vue": "Vue", ".svelte": "Svelte",
-    ".go": "Go",
-    ".rs": "Rust",
-    ".rb": "Ruby",
-    ".swift": "Swift",
-    ".dart": "Dart",
-    ".c": "C", ".h": "C",
-    ".cpp": "C++", ".hpp": "C++", ".cc": "C++", ".hh": "C++",
-    ".m": "Objective-C", ".mm": "Objective-C",
-    ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell",
-    ".sql": "SQL",
-    ".graphql": "GraphQL", ".gql": "GraphQL",
-    ".proto": "Protocol Buffers",
-    ".prisma": "Prisma",
-    ".tf": "Terraform", ".tfvars": "Terraform",
-    ".hcl": "HCL",
-    ".gradle": "Gradle",
-    ".css": "CSS", ".scss": "CSS", ".sass": "CSS", ".less": "CSS",
-    ".html": "HTML",
-}
+DEFAULTS_PATH = Path(__file__).with_name("defaults.json")
 
-EXCLUDE_EXTS = {".md", ".mdx"}
 
-DOCUMENTATION_BY_EXT: dict[str, str] = {
-    ".md": "Markdown",
-    ".mdx": "MDX",
-    ".rst": "reStructuredText",
-    ".adoc": "AsciiDoc",
-    ".asciidoc": "AsciiDoc",
-}
+def load_packaged_defaults() -> dict:
+    try:
+        raw = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"packaged defaults unreadable: {DEFAULTS_PATH}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"packaged defaults must be a JSON object: {DEFAULTS_PATH}")
+    return raw
 
-# Repositories whose tracked source-like artifacts are documentation evidence
-# rather than product source. Matching is by repository directory name, so a
-# docs checkout is counted as source unless its name is configured here.
-DOC_ONLY_REPO_NAMES: set[str] = set()
 
-LANGUAGE_BY_NAME: dict[str, str] = {
-    "dockerfile": "Docker",
-    "containerfile": "Docker",
-    "makefile": "Make",
-}
+_DEFAULTS = load_packaged_defaults()
+
+LANGUAGE_BY_EXT: dict[str, str] = dict(_DEFAULTS["language_by_ext"])
+EXCLUDE_EXTS = set(_DEFAULTS["exclude_exts"])
+DOCUMENTATION_BY_EXT: dict[str, str] = dict(_DEFAULTS["documentation_by_ext"])
+DOC_ONLY_REPO_NAMES: set[str] = set(_DEFAULTS["doc_only_repo_names"])
+LANGUAGE_BY_NAME: dict[str, str] = dict(_DEFAULTS["language_by_name"])
+TEST_DIR_NAMES = set(_DEFAULTS["test_dir_names"])
+TEST_FILE_EXACT_STEMS = set(_DEFAULTS["test_file_exact_stems"])
+TEST_FILE_LOWER_PREFIXES = tuple(_DEFAULTS["test_file_lower_prefixes"])
+TEST_FILE_LOWER_SUFFIXES = tuple(_DEFAULTS["test_file_lower_suffixes"])
+TEST_FILE_CASE_SUFFIXES = tuple(_DEFAULTS["test_file_case_suffixes"])
+EXCLUDE_DIRS = set(_DEFAULTS["exclude_dirs"])
+VENDOR_DIRS = set(_DEFAULTS["vendor_dirs"])
+EXCLUDE_SUBMODULES: set[str] = set(_DEFAULTS["exclude_submodules"])
+EXTRA_REPOS: list[dict[str, str]] | None = list(_DEFAULTS["extra_repos"])
+GENERATED_OR_MINIFIED_MARKERS = tuple(_DEFAULTS["generated_or_minified_markers"])
+GENERATED_OR_MINIFIED_SUFFIXES = tuple(_DEFAULTS["generated_or_minified_suffixes"])
+GENERATED_OR_MINIFIED_NAMES = set(_DEFAULTS["generated_or_minified_names"])
 
 SOURCE_KINDS = ("code", "test")
 
-TEST_DIR_NAMES = {
-    "__tests__",
-    "androidtest",
-    "commontest",
-    "cypress",
-    "e2e",
-    "integration-test",
-    "integration-tests",
-    "iostest",
-    "jstest",
-    "jvmtest",
-    "nativetest",
-    "playwright",
-    "spec",
-    "specs",
-    "test",
-    "testfixtures",
-    "tests",
-    "ui-test",
-    "ui-tests",
-    "uitest",
-    "unit-test",
-    "unit-tests",
-}
-
-TEST_FILE_EXACT_STEMS = {"spec", "test", "tests", "e2e"}
-TEST_FILE_LOWER_PREFIXES = ("test_", "test-")
-TEST_FILE_LOWER_SUFFIXES = (
-    ".e2e",
-    ".spec",
-    ".test",
-    "-e2e",
-    "-spec",
-    "-test",
-    "_e2e",
-    "_spec",
-    "_test",
-)
-TEST_FILE_CASE_SUFFIXES = ("E2E", "IT", "Spec", "Specs", "Test", "Tests")
-
-EXCLUDE_DIRS = {
-    "node_modules", ".git", "dist", "build", "out", "target",
-    ".next", ".nuxt", ".gradle", ".idea", ".vscode", ".cache",
-    "__pycache__", ".pytest_cache", "coverage", ".venv", "venv",
-    "DerivedData", ".build", ".turbo", ".parcel-cache",
-    "vendor", "_vendor", "third_party", "external", "deps",
-    "Pods", "Carthage", "tmp", "temp",
-    "generated", "__generated__", "gen",
-}
-
-VENDOR_DIRS = {"vendor", "_vendor", "third_party", "external", "deps"}
-
-EXCLUDE_SUBMODULES: set[str] = set()
-EXTRA_REPOS: list[dict[str, str]] | None = []
-
-GENERATED_OR_MINIFIED_MARKERS = (
-    ".generated.",
-    ".gen.",
-    ".pb.",
-    ".min.",
-    ".bundle.",
-)
-
-GENERATED_OR_MINIFIED_SUFFIXES = (
-    ".g.dart",
-    "_pb2.py",
-    "_pb2_grpc.py",
-    ".designer.cs",
-)
-
-GENERATED_OR_MINIFIED_NAMES = {
-    "next-env.d.ts",
-    "vite-env.d.ts",
-    "auto-imports.d.ts",
-    "components.d.ts",
-    "buildconfig.java",
-    "r.java",
-}
-
 
 def default_config_data(report_title: str | None = None) -> dict:
-    return {
-        "schema_version": CONFIG_SCHEMA_VERSION,
-        "report_title": report_title or REPORT_TITLE,
-        "language_by_ext": dict(sorted(LANGUAGE_BY_EXT.items())),
-        "exclude_exts": sorted(EXCLUDE_EXTS),
-        "documentation_by_ext": dict(sorted(DOCUMENTATION_BY_EXT.items())),
-        "doc_only_repo_names": sorted(DOC_ONLY_REPO_NAMES),
-        "language_by_name": dict(sorted(LANGUAGE_BY_NAME.items())),
-        "exclude_dirs": sorted(EXCLUDE_DIRS),
-        "vendor_dirs": sorted(VENDOR_DIRS),
-        "exclude_submodules": sorted(EXCLUDE_SUBMODULES),
-        "extra_repos": list(EXTRA_REPOS or []),
-        "generated_or_minified_markers": list(GENERATED_OR_MINIFIED_MARKERS),
-        "generated_or_minified_suffixes": list(GENERATED_OR_MINIFIED_SUFFIXES),
-        "generated_or_minified_names": sorted(GENERATED_OR_MINIFIED_NAMES),
-        "test_dir_names": sorted(TEST_DIR_NAMES),
-        "test_file_exact_stems": sorted(TEST_FILE_EXACT_STEMS),
-        "test_file_lower_prefixes": list(TEST_FILE_LOWER_PREFIXES),
-        "test_file_lower_suffixes": list(TEST_FILE_LOWER_SUFFIXES),
-        "test_file_case_suffixes": list(TEST_FILE_CASE_SUFFIXES),
-    }
+    return {**load_packaged_defaults(), "report_title": report_title or REPORT_TITLE}
 
 
 def _string_dict(value: object, name: str) -> dict[str, str]:

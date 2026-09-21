@@ -90,7 +90,7 @@ Configuration layers are applied in this order:
 2. Tracked `.source-tempo.json`.
 3. Untracked `.source-tempo.local.json`, or the file passed with `--config`.
 
-Later keys replace earlier keys. Arrays replace rather than append. See [examples/source-tempo.json](examples/source-tempo.json) for every supported field.
+Later keys replace earlier keys. Arrays replace rather than append. Run `source-tempo --init-config` to write every supported field with its default, or read [src/source_tempo/defaults.json](src/source_tempo/defaults.json).
 
 Additional repositories use paths relative to the main checkout:
 

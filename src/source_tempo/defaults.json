@@ -119,7 +119,6 @@
     "dockerfile": "Docker",
     "makefile": "Make"
   },
-  "report_title": "source-tempo",
   "schema_version": 1,
   "test_dir_names": [
     "__tests__",
