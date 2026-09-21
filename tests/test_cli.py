@@ -1206,6 +1206,56 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
         self.assertNotEqual(before, after)
 
+    def test_default_policy_signature_is_pinned(self) -> None:
+        tempo = load_script("tempo_signature_pin_test", "src/source_tempo/cli.py")
+        self.assertEqual(tempo.filter_signature(include_vendor=False), "d1d7d3a40ab93799")
+        self.assertEqual(tempo.filter_signature(include_vendor=True), "000ce7a2e8d2c03c")
+
+    def test_packaged_defaults_are_the_only_source_of_default_policy(self) -> None:
+        tempo = load_script("tempo_packaged_defaults_test", "src/source_tempo/cli.py")
+        packaged = json.loads((REPO_ROOT / "src/source_tempo/defaults.json").read_text(encoding="utf-8"))
+        self.assertEqual(tempo.default_config_data("x"), {**packaged, "report_title": "x"})
+        self.assertNotIn("report_title", packaged)
+        constants = {
+            "language_by_ext": tempo.LANGUAGE_BY_EXT,
+            "exclude_exts": tempo.EXCLUDE_EXTS,
+            "documentation_by_ext": tempo.DOCUMENTATION_BY_EXT,
+            "doc_only_repo_names": tempo.DOC_ONLY_REPO_NAMES,
+            "language_by_name": tempo.LANGUAGE_BY_NAME,
+            "exclude_dirs": tempo.EXCLUDE_DIRS,
+            "vendor_dirs": tempo.VENDOR_DIRS,
+            "exclude_submodules": tempo.EXCLUDE_SUBMODULES,
+            "generated_or_minified_markers": tempo.GENERATED_OR_MINIFIED_MARKERS,
+            "generated_or_minified_suffixes": tempo.GENERATED_OR_MINIFIED_SUFFIXES,
+            "generated_or_minified_names": tempo.GENERATED_OR_MINIFIED_NAMES,
+            "test_dir_names": tempo.TEST_DIR_NAMES,
+            "test_file_exact_stems": tempo.TEST_FILE_EXACT_STEMS,
+            "test_file_lower_prefixes": tempo.TEST_FILE_LOWER_PREFIXES,
+            "test_file_lower_suffixes": tempo.TEST_FILE_LOWER_SUFFIXES,
+            "test_file_case_suffixes": tempo.TEST_FILE_CASE_SUFFIXES,
+        }
+        for key, value in constants.items():
+            with self.subTest(key=key):
+                if isinstance(value, dict):
+                    self.assertEqual(value, packaged[key])
+                else:
+                    self.assertEqual(sorted(value), sorted(packaged[key]))
+
+    def test_missing_or_malformed_packaged_defaults_fail_at_import(self) -> None:
+        source = REPO_ROOT / "src/source_tempo/cli.py"
+        for label, content in (("missing", None), ("malformed", "{not json")):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                copy = Path(tmp) / "cli.py"
+                copy.write_bytes(source.read_bytes())
+                if content is not None:
+                    (Path(tmp) / "defaults.json").write_text(content, encoding="utf-8")
+                result = subprocess.run(
+                    [sys.executable, str(copy), "--help"], capture_output=True, text=True
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("packaged defaults unreadable", result.stderr)
+                self.assertIn("defaults.json", result.stderr)
+
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
         tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")
         tempo.DOC_ONLY_REPO_NAMES = {"documentation"}

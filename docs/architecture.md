@@ -27,10 +27,10 @@ It deliberately does not own repository comparison, component taxonomy, remote a
 src/source_tempo/
   __main__.py     python -m source_tempo
   cli.py          collector, cache, report model, HTML renderer
+  defaults.json   every default rule (package data)
 tests/test_cli.py
 macos/            menu-bar app (Swift package)
 scripts/build-macos-app.sh
-examples/source-tempo.json
 ```
 
 `source-tempo` and `python -m source_tempo` both call `source_tempo.cli.main`. The collector uses only the Python standard library and the `git` executable (Python 3.10+, Git 2.30+).
@@ -47,7 +47,7 @@ The CLI analyzes the current directory, or `--root` for another checkout. Config
 
 `--config` replaces the local layer but the tracked layer still loads. `--no-config` disables both. Layers are merged per top-level key: a later key replaces the earlier value, and lists replace rather than append.
 
-`--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [examples/source-tempo.json](../examples/source-tempo.json) shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
+`--init-config` writes the built-in defaults to the local file (refusing to overwrite without `--force-config`). [src/source_tempo/defaults.json](../src/source_tempo/defaults.json) is the single source of the defaults and shows every supported key: language mappings, source and vendor exclusions, test classification, documentation-only repository names, excluded submodules, generated-file markers, and extra repositories.
 
 Counting policy belongs to the workspace being measured.
 
@@ -58,6 +58,8 @@ Counting policy belongs to the workspace being measured.
 - Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same counting policy.
 - Blank lines and comments count: the unit is physical lines, not semantic SLOC.
 - Generated, minified, dependency, build, cache, scratch, and vendor-like paths are excluded by default.
+- Only extensions in `language_by_ext` (and names in `language_by_name`) count as source; Markdown, JSON, YAML, TOML and similar formats are left out so the numbers reflect code.
+- `doc_only_repo_names` lists repository directory names whose source-like files count as documentation rather than source. It is empty by default.
 
 Replacing this engine with `scc`, `tokei`, or Linguist would change metric definitions, not just plumbing, so it is a separate decision from any refactor.
 

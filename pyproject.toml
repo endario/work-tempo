@@ -17,3 +17,6 @@ source-tempo = "source_tempo.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+source_tempo = ["defaults.json"]
