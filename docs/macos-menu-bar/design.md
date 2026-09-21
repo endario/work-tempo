@@ -31,7 +31,7 @@ The MVP excludes:
 
 - Repository comparison and component classification.
 - Arbitrary productivity targets, streaks, scores, or notifications.
-- A non-Git directory that implicitly discovers child repositories. A directory such as `/Users/endario/endario` is represented by adding each Git root it contains.
+- A non-Git directory that implicitly discovers child repositories. A directory such as `~/projects` is represented by adding each Git root it contains.
 - Bundled Python, signing, notarization, auto-update, launch at login, telemetry, accounts, and hosted storage.
 - Cross-platform UI.
 
@@ -125,7 +125,7 @@ Collection performs local Git reads in the selected workspace on this schedule. 
 
 ### Measured workload
 
-On the current Mac, an uncached Adastra run for 61 daily labels and 14 counted repositories computed 801 distinct snapshots in 199.08 seconds with four workers and reached 649 MB maximum RSS. A warm run using the shared collector cache and two workers completed in 16.33 seconds at 209 MB maximum RSS. These measurements set the MVP's conservative two-worker policy and two-minute routine-refresh timeout. The attended first run has no timeout because an interrupted cold run persists no partial cache progress.
+On the current Mac, an uncached run for 61 daily labels and 14 counted repositories computed 801 distinct snapshots in 199.08 seconds with four workers and reached 649 MB maximum RSS. A warm run using the shared collector cache and two workers completed in 16.33 seconds at 209 MB maximum RSS. These measurements set the MVP's conservative two-worker policy and two-minute routine-refresh timeout. The attended first run has no timeout because an interrupted cold run persists no partial cache progress.
 
 ## Metric Semantics
 
@@ -196,15 +196,15 @@ App-level verification includes:
 
 ## Graduation Path
 
-The local CLI process is a replaceable `CollectorClient` implementation. Public distribution can bundle a signed collector and select it through the same executable-resolution interface. A later Xcode project can add signing, notarization, Sparkle or App Store updates, launch-at-login support, and universal builds without changing report decoding or momentum semantics. The Swift package inherits the repository's current private, unlicensed status until provenance and ownership are reviewed.
+The local CLI process is a replaceable `CollectorClient` implementation. Public distribution can bundle a signed collector and select it through the same executable-resolution interface. A later Xcode project can add signing, notarization, Sparkle or App Store updates, launch-at-login support, and universal builds without changing report decoding or momentum semantics.
 
 Cross-platform clients can consume the same JSON contract. The native macOS implementation remains useful rather than becoming throwaway scaffolding.
 
 ## Acceptance Criteria
 
 - The app launches as a menu-bar-only process and opens a responsive popover before collection finishes.
-- A user can add Cloud Wing, Reborn, Adastra, SourceTempo, and other Git roots independently.
-- Adastra uses its active `.source-tempo.json` policy without app-owned path rules.
+- A user can add any number of Git roots independently.
+- A workspace uses its active `.source-tempo.json` policy without app-owned path rules.
 - Last successful data remains available through collector failures and app restarts.
 - The 30-day gauge compares source churn with the preceding 30 days and excludes docs.
 - Code, tests, docs, net growth, and the 60-day trend match the collector's JSON report.

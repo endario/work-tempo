@@ -21,7 +21,6 @@
 - Use two collector workers; first collection is attended and untimed, routine refresh times out after 120 seconds.
 - Preserve the last successful report across refresh failures.
 - Run only one collector process at a time and drop timer/wake triggers while one is active.
-- Keep the repository private and unlicensed.
 
 ---
 
@@ -346,7 +345,7 @@ Assisted-by: OpenAI Codex (GPT-5)
 Build release, create `Contents/MacOS`, and generate an `Info.plist` with:
 
 ```text
-CFBundleIdentifier = co.namespace.SourceTempo
+CFBundleIdentifier = io.github.endario.SourceTempo
 CFBundleName = SourceTempo
 CFBundleExecutable = SourceTempo
 LSMinimumSystemVersion = 14.0
@@ -372,7 +371,7 @@ test "$(defaults read "$PWD/dist/SourceTempo.app/Contents/Info" LSUIElement)" = 
 
 - [x] **Step 4: Install and launch against real workspaces**
 
-Install the app, exercise the actual add-workspace UI, load Adastra, Cloud Wing, Reborn, and SourceTempo, and verify each report matches a fresh CLI JSON run for source LOC, code, tests, docs, current churn, previous churn, and net growth.
+Install the app, exercise the actual add-workspace UI, load several real workspaces, and verify each report matches a fresh CLI JSON run for source LOC, code, tests, docs, current churn, previous churn, and net growth.
 
 - [x] **Step 5: Verify rendered pixels**
 

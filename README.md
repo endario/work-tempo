@@ -25,7 +25,7 @@ Source Tempo has no Python runtime dependencies outside the standard library.
 For local development:
 
 ```bash
-git clone https://github.com/endario-org/source-tempo.git
+git clone https://github.com/endario/source-tempo.git
 cd source-tempo
 python3 -m venv .venv
 .venv/bin/pip install -e .
@@ -191,4 +191,6 @@ swift test
 swift build -c release
 ```
 
-The repository remains private during extraction. See [PROVENANCE.md](PROVENANCE.md) for the source boundary and licensing status.
+## License
+
+[MIT](LICENSE)
