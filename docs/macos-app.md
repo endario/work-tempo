@@ -62,8 +62,6 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 
 **What collection touches.** It reads the tracked Git repositories locally (`git log`, `git archive`, repository inspection). Nothing in it makes network requests or intentionally runs hooks, though repository-local Git configuration still applies.
 
-Reference workload, from one uncached run on an Apple Silicon Mac across 14 repositories and 61 daily labels: 801 snapshots in about 199 seconds with four workers at 649 MB peak RSS; a warm run with two workers took about 16 seconds at 209 MB. These numbers are why the app uses two workers and an untimed first run.
-
 ## Metrics
 
 **Headline: source churn per day.**
