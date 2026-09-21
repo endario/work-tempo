@@ -65,26 +65,6 @@ def load_packaged_defaults() -> dict:
     return raw
 
 
-_DEFAULTS = load_packaged_defaults()
-
-LANGUAGE_BY_EXT: dict[str, str] = dict(_DEFAULTS["language_by_ext"])
-EXCLUDE_EXTS = set(_DEFAULTS["exclude_exts"])
-DOCUMENTATION_BY_EXT: dict[str, str] = dict(_DEFAULTS["documentation_by_ext"])
-DOC_ONLY_REPO_NAMES: set[str] = set(_DEFAULTS["doc_only_repo_names"])
-LANGUAGE_BY_NAME: dict[str, str] = dict(_DEFAULTS["language_by_name"])
-TEST_DIR_NAMES = set(_DEFAULTS["test_dir_names"])
-TEST_FILE_EXACT_STEMS = set(_DEFAULTS["test_file_exact_stems"])
-TEST_FILE_LOWER_PREFIXES = tuple(_DEFAULTS["test_file_lower_prefixes"])
-TEST_FILE_LOWER_SUFFIXES = tuple(_DEFAULTS["test_file_lower_suffixes"])
-TEST_FILE_CASE_SUFFIXES = tuple(_DEFAULTS["test_file_case_suffixes"])
-EXCLUDE_DIRS = set(_DEFAULTS["exclude_dirs"])
-VENDOR_DIRS = set(_DEFAULTS["vendor_dirs"])
-EXCLUDE_SUBMODULES: set[str] = set(_DEFAULTS["exclude_submodules"])
-EXTRA_REPOS: list[dict[str, str]] | None = list(_DEFAULTS["extra_repos"])
-GENERATED_OR_MINIFIED_MARKERS = tuple(_DEFAULTS["generated_or_minified_markers"])
-GENERATED_OR_MINIFIED_SUFFIXES = tuple(_DEFAULTS["generated_or_minified_suffixes"])
-GENERATED_OR_MINIFIED_NAMES = set(_DEFAULTS["generated_or_minified_names"])
-
 SOURCE_KINDS = ("code", "test")
 
 
@@ -149,65 +129,167 @@ def load_workspace_config_layers(root: Path, explicit_path: Path | None = None) 
     return merged
 
 
-def apply_workspace_config(raw: dict) -> None:
-    global REPORT_TITLE
-    global LANGUAGE_BY_EXT, EXCLUDE_EXTS, DOCUMENTATION_BY_EXT, LANGUAGE_BY_NAME
-    global DOC_ONLY_REPO_NAMES, EXCLUDE_DIRS, VENDOR_DIRS, EXCLUDE_SUBMODULES, EXTRA_REPOS
-    global GENERATED_OR_MINIFIED_MARKERS, GENERATED_OR_MINIFIED_SUFFIXES, GENERATED_OR_MINIFIED_NAMES
-    global TEST_DIR_NAMES, TEST_FILE_EXACT_STEMS
-    global TEST_FILE_LOWER_PREFIXES, TEST_FILE_LOWER_SUFFIXES, TEST_FILE_CASE_SUFFIXES
+@dataclass(frozen=True)
+class Config:
+    """Counting policy for one run, built once from packaged defaults plus config layers."""
 
-    if not raw:
-        return
-    schema_version = raw.get("schema_version", CONFIG_SCHEMA_VERSION)
-    if schema_version != CONFIG_SCHEMA_VERSION:
-        raise ValueError(f"unsupported config schema_version {schema_version!r}")
-    if "report_title" in raw:
-        if not isinstance(raw["report_title"], str):
+    report_title: str
+    language_by_ext: dict[str, str]
+    exclude_exts: frozenset[str]
+    documentation_by_ext: dict[str, str]
+    doc_only_repo_names: frozenset[str]
+    language_by_name: dict[str, str]
+    exclude_dirs: frozenset[str]
+    vendor_dirs: frozenset[str]
+    exclude_submodules: frozenset[str]
+    extra_repos: tuple[dict[str, str], ...]
+    generated_or_minified_markers: tuple[str, ...]
+    generated_or_minified_suffixes: tuple[str, ...]
+    generated_or_minified_names: frozenset[str]
+    test_dir_names: frozenset[str]
+    test_file_exact_stems: frozenset[str]
+    test_file_lower_prefixes: tuple[str, ...]
+    test_file_lower_suffixes: tuple[str, ...]
+    test_file_case_suffixes: tuple[str, ...]
+
+    def excluded_dirs(self, include_vendor: bool) -> frozenset[str]:
+        return self.exclude_dirs if not include_vendor else self.exclude_dirs - self.vendor_dirs
+
+    def language_for_path(self, path: str) -> str | None:
+        p = Path(path)
+        if p.suffix.lower() in self.exclude_exts:
+            return None
+        name = p.name.lower()
+        lang = self.language_by_name.get(name)
+        if lang:
+            return lang
+        return self.language_by_ext.get(p.suffix.lower())
+
+    def documentation_language_for_path(self, path: str) -> str | None:
+        return self.documentation_by_ext.get(Path(path).suffix.lower())
+
+    def is_doc_only_repo(self, repo: Path) -> bool:
+        return repo.name in self.doc_only_repo_names
+
+    def doc_only_artifact_language_for_path(self, path: str) -> str | None:
+        return self.documentation_language_for_path(path) or self.language_for_path(path)
+
+    def source_kind_for_path(self, path: str) -> str:
+        parts = path_parts(path)
+        lower_parts = tuple(part.lower() for part in parts)
+        if any(part in self.test_dir_names for part in lower_parts[:-1]):
+            return "test"
+
+        p = Path(path)
+        name = p.name
+        lower_name = name.lower()
+        suffix = p.suffix
+        stem = name[:-len(suffix)] if suffix else name
+        lower_stem = stem.lower()
+        if lower_stem in self.test_file_exact_stems:
+            return "test"
+        if lower_stem.startswith(self.test_file_lower_prefixes):
+            return "test"
+        if lower_stem.endswith(self.test_file_lower_suffixes):
+            return "test"
+        if stem.endswith(self.test_file_case_suffixes):
+            return "test"
+        if any(marker in lower_name for marker in (".test.", ".spec.", ".e2e.", ".cy.")):
+            return "test"
+        return "code"
+
+    def is_generated_or_minified(self, path: str) -> bool:
+        lower = path.lower()
+        name = Path(path).name.lower()
+        if name in self.generated_or_minified_names:
+            return True
+        if any(marker in lower for marker in self.generated_or_minified_markers):
+            return True
+        return any(lower.endswith(suffix) for suffix in self.generated_or_minified_suffixes)
+
+    def should_count_path(self, path: str, include_vendor: bool = False) -> bool:
+        parts = path_parts(path)
+        if any(part in self.excluded_dirs(include_vendor) for part in parts[:-1]):
+            return False
+        if self.is_generated_or_minified(path):
+            return False
+        return self.language_for_path(path) is not None
+
+    def should_count_documentation_path(self, path: str, include_vendor: bool = False) -> bool:
+        parts = path_parts(path)
+        if any(part in self.excluded_dirs(include_vendor) for part in parts[:-1]):
+            return False
+        if self.is_generated_or_minified(path):
+            return False
+        return self.documentation_language_for_path(path) is not None
+
+    def signature(self, include_vendor: bool) -> str:
+        payload = {
+            "language_by_ext": self.language_by_ext,
+            "language_by_name": self.language_by_name,
+            "documentation_by_ext": self.documentation_by_ext,
+            "doc_only_repo_names": sorted(self.doc_only_repo_names),
+            "exclude_exts": sorted(self.exclude_exts),
+            "exclude_dirs": sorted(self.excluded_dirs(include_vendor)),
+            "generated_markers": self.generated_or_minified_markers,
+            "generated_suffixes": self.generated_or_minified_suffixes,
+            "generated_names": sorted(self.generated_or_minified_names),
+            "source_kinds": SOURCE_KINDS,
+            "test_dir_names": sorted(self.test_dir_names),
+            "test_file_exact_stems": sorted(self.test_file_exact_stems),
+            "test_file_lower_prefixes": self.test_file_lower_prefixes,
+            "test_file_lower_suffixes": self.test_file_lower_suffixes,
+            "test_file_case_suffixes": self.test_file_case_suffixes,
+            "include_vendor": include_vendor,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def build_config(defaults: dict, layers: dict, report_title: str) -> Config:
+    """Overlay config layers on packaged defaults; a later top-level key replaces an earlier one."""
+    if layers:
+        schema_version = layers.get("schema_version", CONFIG_SCHEMA_VERSION)
+        if schema_version != CONFIG_SCHEMA_VERSION:
+            raise ValueError(f"unsupported config schema_version {schema_version!r}")
+    raw = {**defaults, **layers}
+    if "report_title" in layers:
+        if not isinstance(layers["report_title"], str):
             raise ValueError("report_title must be a string")
-        REPORT_TITLE = raw["report_title"]
-    if "language_by_ext" in raw:
-        LANGUAGE_BY_EXT = _string_dict(raw["language_by_ext"], "language_by_ext")
-    if "exclude_exts" in raw:
-        EXCLUDE_EXTS = set(_string_list(raw["exclude_exts"], "exclude_exts"))
-    if "documentation_by_ext" in raw:
-        DOCUMENTATION_BY_EXT = _string_dict(raw["documentation_by_ext"], "documentation_by_ext")
-    if "doc_only_repo_names" in raw:
-        DOC_ONLY_REPO_NAMES = set(_string_list(raw["doc_only_repo_names"], "doc_only_repo_names"))
-    if "language_by_name" in raw:
-        LANGUAGE_BY_NAME = _string_dict(raw["language_by_name"], "language_by_name")
-    if "exclude_dirs" in raw:
-        EXCLUDE_DIRS = set(_string_list(raw["exclude_dirs"], "exclude_dirs"))
-    if "vendor_dirs" in raw:
-        VENDOR_DIRS = set(_string_list(raw["vendor_dirs"], "vendor_dirs"))
-    if "exclude_submodules" in raw:
-        EXCLUDE_SUBMODULES = set(_string_list(raw["exclude_submodules"], "exclude_submodules"))
-    if "extra_repos" in raw:
-        EXTRA_REPOS = _extra_repo_list(raw["extra_repos"], "extra_repos")
-    if "generated_or_minified_markers" in raw:
-        GENERATED_OR_MINIFIED_MARKERS = tuple(_string_list(raw["generated_or_minified_markers"], "generated_or_minified_markers"))
-    if "generated_or_minified_suffixes" in raw:
-        GENERATED_OR_MINIFIED_SUFFIXES = tuple(_string_list(raw["generated_or_minified_suffixes"], "generated_or_minified_suffixes"))
-    if "generated_or_minified_names" in raw:
-        GENERATED_OR_MINIFIED_NAMES = set(_string_list(raw["generated_or_minified_names"], "generated_or_minified_names"))
-    if "test_dir_names" in raw:
-        TEST_DIR_NAMES = set(_string_list(raw["test_dir_names"], "test_dir_names"))
-    if "test_file_exact_stems" in raw:
-        TEST_FILE_EXACT_STEMS = set(_string_list(raw["test_file_exact_stems"], "test_file_exact_stems"))
-    if "test_file_lower_prefixes" in raw:
-        TEST_FILE_LOWER_PREFIXES = tuple(_string_list(raw["test_file_lower_prefixes"], "test_file_lower_prefixes"))
-    if "test_file_lower_suffixes" in raw:
-        TEST_FILE_LOWER_SUFFIXES = tuple(_string_list(raw["test_file_lower_suffixes"], "test_file_lower_suffixes"))
-    if "test_file_case_suffixes" in raw:
-        TEST_FILE_CASE_SUFFIXES = tuple(_string_list(raw["test_file_case_suffixes"], "test_file_case_suffixes"))
+        report_title = layers["report_title"]
+
+    def strings(key: str) -> list[str]:
+        return _string_list(raw[key], key)
+
+    return Config(
+        report_title=report_title,
+        language_by_ext=_string_dict(raw["language_by_ext"], "language_by_ext"),
+        exclude_exts=frozenset(strings("exclude_exts")),
+        documentation_by_ext=_string_dict(raw["documentation_by_ext"], "documentation_by_ext"),
+        doc_only_repo_names=frozenset(strings("doc_only_repo_names")),
+        language_by_name=_string_dict(raw["language_by_name"], "language_by_name"),
+        exclude_dirs=frozenset(strings("exclude_dirs")),
+        vendor_dirs=frozenset(strings("vendor_dirs")),
+        exclude_submodules=frozenset(strings("exclude_submodules")),
+        extra_repos=tuple(_extra_repo_list(raw["extra_repos"], "extra_repos")),
+        generated_or_minified_markers=tuple(strings("generated_or_minified_markers")),
+        generated_or_minified_suffixes=tuple(strings("generated_or_minified_suffixes")),
+        generated_or_minified_names=frozenset(strings("generated_or_minified_names")),
+        test_dir_names=frozenset(strings("test_dir_names")),
+        test_file_exact_stems=frozenset(strings("test_file_exact_stems")),
+        test_file_lower_prefixes=tuple(strings("test_file_lower_prefixes")),
+        test_file_lower_suffixes=tuple(strings("test_file_lower_suffixes")),
+        test_file_case_suffixes=tuple(strings("test_file_case_suffixes")),
+    )
+
+
+def default_config(report_title: str = REPORT_TITLE) -> Config:
+    return build_config(load_packaged_defaults(), {}, report_title)
 
 
 def default_report_title_for_root(root: Path) -> str:
     return root.name or REPORT_TITLE
 
-
-def effective_extra_repos() -> list[dict[str, str]]:
-    return EXTRA_REPOS or []
 
 
 def resolve_repo_path(root: Path, repo_path: str) -> Path:
@@ -397,28 +479,6 @@ def timezone_signature(tz: tzinfo) -> str:
     return str(zone_key or timezone_label(tz)).replace(" ", "_")
 
 
-def filter_signature(include_vendor: bool) -> str:
-    payload = {
-        "language_by_ext": LANGUAGE_BY_EXT,
-        "language_by_name": LANGUAGE_BY_NAME,
-        "documentation_by_ext": DOCUMENTATION_BY_EXT,
-        "doc_only_repo_names": sorted(DOC_ONLY_REPO_NAMES),
-        "exclude_exts": sorted(EXCLUDE_EXTS),
-        "exclude_dirs": sorted(EXCLUDE_DIRS if not include_vendor else EXCLUDE_DIRS - VENDOR_DIRS),
-        "generated_markers": GENERATED_OR_MINIFIED_MARKERS,
-        "generated_suffixes": GENERATED_OR_MINIFIED_SUFFIXES,
-        "generated_names": sorted(GENERATED_OR_MINIFIED_NAMES),
-        "source_kinds": SOURCE_KINDS,
-        "test_dir_names": sorted(TEST_DIR_NAMES),
-        "test_file_exact_stems": sorted(TEST_FILE_EXACT_STEMS),
-        "test_file_lower_prefixes": TEST_FILE_LOWER_PREFIXES,
-        "test_file_lower_suffixes": TEST_FILE_LOWER_SUFFIXES,
-        "test_file_case_suffixes": TEST_FILE_CASE_SUFFIXES,
-        "include_vendor": include_vendor,
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()[:16]
-
 
 def empty_cache() -> dict:
     return {
@@ -478,12 +538,12 @@ def save_cache(path: Path | None, cache: dict | None) -> None:
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
 
 
-def snapshot_cache_key(label: str, commit: str, include_vendor: bool) -> str:
-    return f"{filter_signature(include_vendor)}|{label}|{commit}"
+def snapshot_cache_key(label: str, commit: str, config: Config, include_vendor: bool) -> str:
+    return f"{config.signature(include_vendor)}|{label}|{commit}"
 
 
-def churn_cache_key(label: str, include_vendor: bool, report_tz: tzinfo, period: str) -> str:
-    return f"{filter_signature(include_vendor)}|{timezone_signature(report_tz)}|{period}|{label}"
+def churn_cache_key(label: str, config: Config, include_vendor: bool, report_tz: tzinfo, period: str) -> str:
+    return f"{config.signature(include_vendor)}|{timezone_signature(report_tz)}|{period}|{label}"
 
 
 def snapshot_to_cache(snap: Snapshot) -> dict:
@@ -535,83 +595,6 @@ def path_parts(path: str) -> tuple[str, ...]:
     return tuple(part for part in Path(path).parts if part not in ("", "."))
 
 
-def language_for_path(path: str) -> str | None:
-    p = Path(path)
-    if p.suffix.lower() in EXCLUDE_EXTS:
-        return None
-    name = p.name.lower()
-    lang = LANGUAGE_BY_NAME.get(name)
-    if lang:
-        return lang
-    return LANGUAGE_BY_EXT.get(p.suffix.lower())
-
-
-def documentation_language_for_path(path: str) -> str | None:
-    return DOCUMENTATION_BY_EXT.get(Path(path).suffix.lower())
-
-
-def is_doc_only_repo(repo: Path) -> bool:
-    return repo.name in DOC_ONLY_REPO_NAMES
-
-
-def doc_only_artifact_language_for_path(path: str) -> str | None:
-    return documentation_language_for_path(path) or language_for_path(path)
-
-
-def source_kind_for_path(path: str) -> str:
-    parts = path_parts(path)
-    lower_parts = tuple(part.lower() for part in parts)
-    if any(part in TEST_DIR_NAMES for part in lower_parts[:-1]):
-        return "test"
-
-    p = Path(path)
-    name = p.name
-    lower_name = name.lower()
-    suffix = p.suffix
-    stem = name[:-len(suffix)] if suffix else name
-    lower_stem = stem.lower()
-    if lower_stem in TEST_FILE_EXACT_STEMS:
-        return "test"
-    if lower_stem.startswith(TEST_FILE_LOWER_PREFIXES):
-        return "test"
-    if lower_stem.endswith(TEST_FILE_LOWER_SUFFIXES):
-        return "test"
-    if stem.endswith(TEST_FILE_CASE_SUFFIXES):
-        return "test"
-    if any(marker in lower_name for marker in (".test.", ".spec.", ".e2e.", ".cy.")):
-        return "test"
-    return "code"
-
-
-def is_generated_or_minified(path: str) -> bool:
-    lower = path.lower()
-    name = Path(path).name.lower()
-    if name in GENERATED_OR_MINIFIED_NAMES:
-        return True
-    if any(marker in lower for marker in GENERATED_OR_MINIFIED_MARKERS):
-        return True
-    return any(lower.endswith(suffix) for suffix in GENERATED_OR_MINIFIED_SUFFIXES)
-
-
-def should_count_path(path: str, include_vendor: bool = False) -> bool:
-    parts = path_parts(path)
-    excluded = EXCLUDE_DIRS if not include_vendor else EXCLUDE_DIRS - VENDOR_DIRS
-    if any(part in excluded for part in parts[:-1]):
-        return False
-    if is_generated_or_minified(path):
-        return False
-    return language_for_path(path) is not None
-
-
-def should_count_documentation_path(path: str, include_vendor: bool = False) -> bool:
-    parts = path_parts(path)
-    excluded = EXCLUDE_DIRS if not include_vendor else EXCLUDE_DIRS - VENDOR_DIRS
-    if any(part in excluded for part in parts[:-1]):
-        return False
-    if is_generated_or_minified(path):
-        return False
-    return documentation_language_for_path(path) is not None
-
 
 def gitmodule_paths(root: Path) -> list[str]:
     out = run(
@@ -630,6 +613,7 @@ def gitmodule_paths(root: Path) -> list[str]:
 
 def list_repos(
     root: Path,
+    config: Config,
     include_vendor: bool = False,
     include_non_product: bool = False,
 ) -> tuple[list[tuple[str, Path]], list[str]]:
@@ -637,10 +621,10 @@ def list_repos(
     repos: list[tuple[str, Path]] = [("(parent)", root)]
     skipped: list[str] = []
     for sub_path in gitmodule_paths(root):
-        if not include_vendor and any(part in EXCLUDE_DIRS for part in path_parts(sub_path)):
+        if not include_vendor and any(part in config.exclude_dirs for part in path_parts(sub_path)):
             skipped.append(sub_path)
             continue
-        if not include_non_product and sub_path in EXCLUDE_SUBMODULES:
+        if not include_non_product and sub_path in config.exclude_submodules:
             skipped.append(sub_path)
             continue
         full = root / sub_path
@@ -648,7 +632,7 @@ def list_repos(
             skipped.append(sub_path)
             continue
         repos.append((sub_path, full))
-    for repo in effective_extra_repos():
+    for repo in config.extra_repos:
         label = repo["label"]
         full = next((
             path for path in candidate_repo_paths(root, repo)
@@ -661,24 +645,24 @@ def list_repos(
     return repos, skipped
 
 
-def partition_skipped_repos(root: Path, skipped_repos: list[str]) -> dict[str, list[str]]:
-    extra_labels = {repo["label"] for repo in effective_extra_repos()}
+def partition_skipped_repos(root: Path, config: Config, skipped_repos: list[str]) -> dict[str, list[str]]:
+    extra_labels = {repo["label"] for repo in config.extra_repos}
     declared_submodules = set(gitmodule_paths(root))
-    non_product = [r for r in skipped_repos if r in EXCLUDE_SUBMODULES]
+    non_product = [r for r in skipped_repos if r in config.exclude_submodules]
     unavailable_extra = [r for r in skipped_repos if r in extra_labels]
     unavailable_submodule = [
         r for r in skipped_repos
         if (
             r in declared_submodules
-            and r not in EXCLUDE_SUBMODULES
+            and r not in config.exclude_submodules
             and r not in extra_labels
-            and not any(part in EXCLUDE_DIRS for part in path_parts(r))
+            and not any(part in config.exclude_dirs for part in path_parts(r))
         )
     ]
     vendor_like = [
         r for r in skipped_repos
         if (
-            r not in EXCLUDE_SUBMODULES
+            r not in config.exclude_submodules
             and r not in extra_labels
             and r not in unavailable_submodule
         )
@@ -706,7 +690,7 @@ def find_commit_at(repo: Path, cutoff_iso: str) -> str | None:
     return result.stdout.strip() or None
 
 
-def count_snapshot(repo: Path, commit: str, include_vendor: bool = False) -> Snapshot:
+def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool = False) -> Snapshot:
     """Extract `commit` from `repo` into a temporary directory and count lines."""
     snap = Snapshot()
     archive = subprocess.run(
@@ -726,24 +710,24 @@ def count_snapshot(repo: Path, commit: str, include_vendor: bool = False) -> Sna
             error = extract.stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"tar extraction failed for {repo}: {error or 'unknown error'}")
 
-        excluded = EXCLUDE_DIRS if not include_vendor else EXCLUDE_DIRS - VENDOR_DIRS
+        excluded = config.excluded_dirs(include_vendor)
         for dirpath, dirnames, filenames in os.walk(tmp):
             dirnames[:] = [d for d in dirnames if d not in excluded]
             for name in filenames:
                 fpath = Path(dirpath) / name
                 rel = fpath.relative_to(tmp).as_posix()
-                lang = language_for_path(rel)
+                lang = config.language_for_path(rel)
                 doc_lang = (
-                    doc_only_artifact_language_for_path(rel)
-                    if is_doc_only_repo(repo)
-                    else documentation_language_for_path(rel)
+                    config.doc_only_artifact_language_for_path(rel)
+                    if config.is_doc_only_repo(repo)
+                    else config.documentation_language_for_path(rel)
                 )
                 if lang is None and doc_lang is None:
                     continue
-                if lang is not None and not should_count_path(rel, include_vendor=include_vendor):
+                if lang is not None and not config.should_count_path(rel, include_vendor=include_vendor):
                     continue
-                if doc_lang is not None and not should_count_documentation_path(rel, include_vendor=include_vendor):
-                    if not (is_doc_only_repo(repo) and should_count_path(rel, include_vendor=include_vendor)):
+                if doc_lang is not None and not config.should_count_documentation_path(rel, include_vendor=include_vendor):
+                    if not (config.is_doc_only_repo(repo) and config.should_count_path(rel, include_vendor=include_vendor)):
                         continue
                 try:
                     with open(fpath, "rb") as fh:
@@ -754,22 +738,22 @@ def count_snapshot(repo: Path, commit: str, include_vendor: bool = False) -> Sna
                     snap.docs_total += lines
                     snap.docs_by_language[doc_lang] = snap.docs_by_language.get(doc_lang, 0) + lines
                     continue
-                kind = source_kind_for_path(rel)
+                kind = config.source_kind_for_path(rel)
                 snap.total += lines
                 snap.by_language[lang] = snap.by_language.get(lang, 0) + lines
                 snap.by_kind[kind] = snap.by_kind.get(kind, 0) + lines
     return snap
 
 
-def _snapshot_task(args: tuple[str, str, bool, dict]) -> Snapshot:
+def _snapshot_task(args: tuple[str, str, bool, Config]) -> Snapshot:
     """Worker entry for ProcessPoolExecutor — must be top-level for pickling."""
-    repo_str, commit, include_vendor, workspace_config = args
-    apply_workspace_config(workspace_config)
-    return count_snapshot(Path(repo_str), commit, include_vendor=include_vendor)
+    repo_str, commit, include_vendor, config = args
+    return count_snapshot(Path(repo_str), commit, config, include_vendor=include_vendor)
 
 
 def collect_churn_by_period(
     repo: Path,
+    config: Config,
     include_vendor: bool = False,
     rev_range: str | None = None,
     report_tz: tzinfo | None = None,
@@ -778,7 +762,7 @@ def collect_churn_by_period(
 ) -> dict[str, dict[str, tuple[int, int]]]:
     """Return {period_label: {source_kind: (added, deleted)}} across repo history.
 
-    Binary files (numstat '-') and files outside LANGUAGE_BY_EXT are skipped.
+    Binary files (numstat '-') and files outside the configured languages are skipped.
     """
     cmd = ["git", "log", "--no-merges", "--numstat", "--format=__C__ %aI"]
     if rev_range:
@@ -808,13 +792,13 @@ def collect_churn_by_period(
         added_s, deleted_s, path = parts[0], parts[1], parts[2]
         if added_s == "-" or deleted_s == "-":
             continue  # binary
-        if is_doc_only_repo(repo) and should_count_path(path, include_vendor=include_vendor):
+        if config.is_doc_only_repo(repo) and config.should_count_path(path, include_vendor=include_vendor):
             if not include_docs:
                 continue
             kind = "doc"
-        elif should_count_path(path, include_vendor=include_vendor):
-            kind = source_kind_for_path(path)
-        elif include_docs and should_count_documentation_path(path, include_vendor=include_vendor):
+        elif config.should_count_path(path, include_vendor=include_vendor):
+            kind = config.source_kind_for_path(path)
+        elif include_docs and config.should_count_documentation_path(path, include_vendor=include_vendor):
             kind = "doc"
         else:
             continue
@@ -875,6 +859,7 @@ def _churn_buckets_from_cache(raw: object) -> dict[str, dict[str, tuple[int, int
 def collect_churn_cached(
     label: str,
     repo: Path,
+    config: Config,
     include_vendor: bool,
     cache: dict | None,
     report_tz: tzinfo,
@@ -884,6 +869,7 @@ def collect_churn_cached(
     if cache is None:
         return collect_churn_by_period(
             repo,
+            config,
             include_vendor=include_vendor,
             report_tz=report_tz,
             include_docs=True,
@@ -894,7 +880,7 @@ def collect_churn_cached(
     if head is None:
         return {}, "miss"
 
-    key = churn_cache_key(label, include_vendor, report_tz, period)
+    key = churn_cache_key(label, config, include_vendor, report_tz, period)
     repos_cache = cache.setdefault("churn_repos", {})
     entry = repos_cache.get(key)
     if isinstance(entry, dict):
@@ -906,6 +892,7 @@ def collect_churn_cached(
             if is_ancestor(repo, cached_head, head):
                 delta = collect_churn_by_period(
                     repo,
+                    config,
                     include_vendor=include_vendor,
                     rev_range=f"{cached_head}..HEAD",
                     report_tz=report_tz,
@@ -918,6 +905,7 @@ def collect_churn_cached(
 
     buckets = collect_churn_by_period(
         repo,
+        config,
         include_vendor=include_vendor,
         report_tz=report_tz,
         include_docs=True,
@@ -2145,7 +2133,6 @@ def write_html(path: Path, document: dict[str, object]) -> None:
 
 
 def main() -> int:
-    global REPORT_TITLE
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--months", type=int, default=18)
@@ -2198,6 +2185,12 @@ def main() -> int:
         print(f"error: {root} is not a git repo", file=sys.stderr)
         return 1
 
+    try:
+        defaults = load_packaged_defaults()
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
     explicit_config_path = args.config.resolve() if args.config else None
     config_path = None if args.no_config else (explicit_config_path or root / LOCAL_CONFIG_FILENAME)
     if args.init_config:
@@ -2217,9 +2210,7 @@ def main() -> int:
         workspace_config = (
             {} if args.no_config else load_workspace_config_layers(root, explicit_config_path)
         )
-        if "report_title" not in workspace_config:
-            REPORT_TITLE = default_report_title_for_root(root)
-        apply_workspace_config(workspace_config)
+        config = build_config(defaults, workspace_config, default_report_title_for_root(root))
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -2236,6 +2227,7 @@ def main() -> int:
 
     repos, skipped_repos = list_repos(
         root,
+        config,
         include_vendor=args.include_vendor,
         include_non_product=args.include_non_product,
     )
@@ -2259,14 +2251,14 @@ def main() -> int:
     else:
         print("Config: built-in defaults")
     counted_labels = {label for label, _path in repos}
-    extra_labels = {repo["label"] for repo in effective_extra_repos()}
+    extra_labels = {repo["label"] for repo in config.extra_repos}
     extra_count = len(counted_labels & extra_labels)
     submodule_count = max(0, len(repos) - 1 - extra_count)
     repo_parts = ["parent", f"{submodule_count} submodules"]
     if extra_count:
         repo_parts.append(f"{extra_count} extra {'repo' if extra_count == 1 else 'repos'}")
     print(f"Repos: {len(repos)} counted repositories ({' + '.join(repo_parts)})")
-    skipped_partition = partition_skipped_repos(root, skipped_repos)
+    skipped_partition = partition_skipped_repos(root, config, skipped_repos)
     if skipped_repos:
         vendor_like = skipped_partition["vendor_like"]
         non_product = skipped_partition["non_product"]
@@ -2305,6 +2297,7 @@ def main() -> int:
             churn_all[label], status = collect_churn_cached(
                 label,
                 path,
+                config,
                 args.include_vendor,
                 cache,
                 report_tz,
@@ -2343,7 +2336,7 @@ def main() -> int:
             if commit is None:
                 continue
             snapshot_commits[mi][ri] = commit
-            key = snapshot_cache_key(label, commit, args.include_vendor)
+            key = snapshot_cache_key(label, commit, config, args.include_vendor)
             cached = (
                 snapshot_from_cache(cache.get("snapshots", {}).get(key))
                 if cache is not None else None
@@ -2361,7 +2354,7 @@ def main() -> int:
         done_count = 0
         for mi, ri, path, commit, key in tasks:
             try:
-                snap = count_snapshot(path, commit, args.include_vendor)
+                snap = count_snapshot(path, commit, config, args.include_vendor)
                 snapshots[mi][ri] = snap
                 if cache is not None:
                     cache.setdefault("snapshots", {})[key] = snapshot_to_cache(snap)
@@ -2376,7 +2369,7 @@ def main() -> int:
             futures = {
                 pool.submit(
                     _snapshot_task,
-                    (str(path), commit, args.include_vendor, workspace_config),
+                    (str(path), commit, args.include_vendor, config),
                 ): (mi, ri, key)
                 for mi, ri, path, commit, key in tasks
             }
@@ -2527,7 +2520,7 @@ def main() -> int:
 
         document = build_report_data(ReportInput(
             root=root,
-            report_title=REPORT_TITLE,
+            report_title=config.report_title,
             generated_at=datetime.now(report_tz),
             report_tz=report_tz,
             period=args.period,

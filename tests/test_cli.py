@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import io
 import json
 import os
+import pickle
 import stat
 import subprocess
 import sys
@@ -20,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 
 def load_script(name: str, rel_path: str):
@@ -99,8 +102,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(tempo.EXCLUDE_SUBMODULES, set())
-            self.assertEqual(tempo.effective_extra_repos(), [])
+            config = tempo.default_config()
+            self.assertEqual(config.exclude_submodules, frozenset())
+            self.assertEqual(config.extra_repos, ())
             self.assertEqual(tempo.CONFIG_FILENAME, ".source-tempo.json")
             self.assertEqual(tempo.LOCAL_CONFIG_FILENAME, ".source-tempo.local.json")
 
@@ -189,24 +193,27 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 {"report_title": "Explicit"},
             )
 
-    def test_effective_extra_repos_uses_workspace_config(self) -> None:
+    def test_build_config_overlays_workspace_layers_onto_defaults(self) -> None:
         tempo = load_script("tempo_effective_config_test", "src/source_tempo/cli.py")
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            tempo.apply_workspace_config({
+        config = tempo.build_config(
+            tempo.load_packaged_defaults(),
+            {
                 "extra_repos": [
                     {"label": "companion", "path": "../companion"},
                     {"label": "embedded", "path": "embedded"},
                 ],
-            })
+            },
+            "Fixture",
+        )
 
-            self.assertEqual(
-                tempo.effective_extra_repos(),
-                [
-                    {"label": "companion", "path": "../companion"},
-                    {"label": "embedded", "path": "embedded"},
-                ],
-            )
+        self.assertEqual(
+            config.extra_repos,
+            (
+                {"label": "companion", "path": "../companion"},
+                {"label": "embedded", "path": "embedded"},
+            ),
+        )
+        self.assertEqual(config.language_by_ext, tempo.default_config().language_by_ext)
 
     def test_list_repos_keeps_non_product_submodules_out_and_adds_extra_repo(self) -> None:
         tempo = load_script("tempo_repos_test", "src/source_tempo/cli.py")
@@ -257,25 +264,24 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return str(cwd)
                 return ""
 
-            original_run = tempo.run
-            original_extra_repos = tempo.EXTRA_REPOS
-            original_excluded_submodules = tempo.EXCLUDE_SUBMODULES
-            try:
-                tempo.run = fake_run
-                tempo.EXTRA_REPOS = [
+            config = dataclasses.replace(
+                tempo.default_config(),
+                extra_repos=(
                     {"label": "companion", "path": "../companion"},
                     {"label": "embedded", "path": "embedded"},
-                ]
-                tempo.EXCLUDE_SUBMODULES = {
+                ),
+                exclude_submodules=frozenset({
                     "modules/prototype",
                     "modules/demo",
                     "modules/status-site",
-                }
-                repos, skipped = tempo.list_repos(root)
+                }),
+            )
+            original_run = tempo.run
+            try:
+                tempo.run = fake_run
+                repos, skipped = tempo.list_repos(root, config)
             finally:
                 tempo.run = original_run
-                tempo.EXTRA_REPOS = original_extra_repos
-                tempo.EXCLUDE_SUBMODULES = original_excluded_submodules
 
             self.assertEqual(
                 [label for label, _path in repos],
@@ -316,14 +322,11 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 return ""
 
             original_run = tempo.run
-            original_extra_repos = tempo.EXTRA_REPOS
             try:
                 tempo.run = fake_run
-                tempo.EXTRA_REPOS = []
-                repos, skipped = tempo.list_repos(root)
+                repos, skipped = tempo.list_repos(root, tempo.default_config())
             finally:
                 tempo.run = original_run
-                tempo.EXTRA_REPOS = original_extra_repos
 
         self.assertEqual([label for label, _path in repos], ["(parent)", "modules/core"])
         self.assertEqual(skipped, [])
@@ -347,14 +350,11 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 return ""
 
             original_run = tempo.run
-            original_extra_repos = tempo.EXTRA_REPOS
             try:
                 tempo.run = fake_run
-                tempo.EXTRA_REPOS = []
-                repos, skipped = tempo.list_repos(root)
+                repos, skipped = tempo.list_repos(root, tempo.default_config())
             finally:
                 tempo.run = original_run
-                tempo.EXTRA_REPOS = original_extra_repos
 
         self.assertEqual([label for label, _path in repos], ["(parent)"])
         self.assertEqual(skipped, ["modules/core"])
@@ -367,12 +367,11 @@ class LocAnalysisScriptTest(unittest.TestCase):
             nested.mkdir(parents=True)
             subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
 
-            original_extra_repos = tempo.EXTRA_REPOS
-            try:
-                tempo.EXTRA_REPOS = [{"label": "companion", "path": "nested/companion"}]
-                repos, skipped = tempo.list_repos(root)
-            finally:
-                tempo.EXTRA_REPOS = original_extra_repos
+            config = dataclasses.replace(
+                tempo.default_config(),
+                extra_repos=({"label": "companion", "path": "nested/companion"},),
+            )
+            repos, skipped = tempo.list_repos(root, config)
 
         self.assertEqual([label for label, _path in repos], ["(parent)"])
         self.assertEqual(skipped, ["companion"])
@@ -401,22 +400,21 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     )
                 return ""
 
+            config = dataclasses.replace(
+                tempo.default_config(),
+                extra_repos=({"label": "companion", "path": "../companion"},),
+                exclude_submodules=frozenset({"modules/status-site"}),
+            )
             original_run = tempo.run
-            original_extra_repos = tempo.EXTRA_REPOS
-            original_excluded_submodules = tempo.EXCLUDE_SUBMODULES
             try:
                 tempo.run = fake_run
-                tempo.EXTRA_REPOS = [{"label": "companion", "path": "../companion"}]
-                tempo.EXCLUDE_SUBMODULES = {"modules/status-site"}
-
                 partition = tempo.partition_skipped_repos(
                     root,
+                    config,
                     ["_vendor/json-render", "modules/status-site", "modules/core", "companion"],
                 )
             finally:
                 tempo.run = original_run
-                tempo.EXTRA_REPOS = original_extra_repos
-                tempo.EXCLUDE_SUBMODULES = original_excluded_submodules
 
         self.assertEqual(partition["vendor_like"], ["_vendor/json-render"])
         self.assertEqual(partition["non_product"], ["modules/status-site"])
@@ -445,25 +443,26 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     return str(cwd)
                 return ""
 
+            defaults = tempo.load_packaged_defaults()
             original_run = tempo.run
-            original_extra_repos = tempo.EXTRA_REPOS
             try:
                 tempo.run = fake_run
 
-                tempo.apply_workspace_config({"extra_repos": []})
-                repos, skipped = tempo.list_repos(root)
+                config = tempo.build_config(defaults, {"extra_repos": []}, "Fixture")
+                repos, skipped = tempo.list_repos(root, config)
                 self.assertEqual([label for label, _path in repos], ["(parent)"])
                 self.assertEqual(skipped, [])
 
-                tempo.apply_workspace_config(
-                    {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]}
+                config = tempo.build_config(
+                    defaults,
+                    {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]},
+                    "Fixture",
                 )
-                repos, skipped = tempo.list_repos(root)
+                repos, skipped = tempo.list_repos(root, config)
                 self.assertEqual([label for label, _path in repos], ["(parent)", "custom-consult"])
                 self.assertEqual(skipped, [])
             finally:
                 tempo.run = original_run
-                tempo.EXTRA_REPOS = original_extra_repos
 
     def test_report_document_is_raw_complete_and_instance_driven(self) -> None:
         tempo = load_script("tempo_report_document_test", "src/source_tempo/cli.py")
@@ -499,7 +498,6 @@ class LocAnalysisScriptTest(unittest.TestCase):
             include_non_product=False,
             include_forecast=False,
         )
-        tempo.REPORT_TITLE = "Mutated global"
 
         document = tempo.build_report_data(report)
 
@@ -624,7 +622,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
         with mock.patch.object(tempo.subprocess, "run", return_value=archive_failure):
             with self.assertRaisesRegex(RuntimeError, "missing object"):
-                tempo.count_snapshot(Path("/tmp/repo"), "deadbeef")
+                tempo.count_snapshot(Path("/tmp/repo"), "deadbeef", tempo.default_config())
 
         churn_failure = subprocess.CompletedProcess(
             args=["git", "log"],
@@ -634,7 +632,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
         with mock.patch.object(tempo.subprocess, "run", return_value=churn_failure):
             with self.assertRaisesRegex(RuntimeError, "repository unavailable"):
-                tempo.collect_churn_by_period(Path("/tmp/repo"))
+                tempo.collect_churn_by_period(Path("/tmp/repo"), tempo.default_config())
 
         cache = tempo.empty_cache()
         with (
@@ -649,6 +647,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 tempo.collect_churn_cached(
                     "repo",
                     Path("/tmp/repo"),
+                    tempo.default_config(),
                     False,
                     cache,
                     timezone.utc,
@@ -1196,53 +1195,37 @@ class LocAnalysisScriptTest(unittest.TestCase):
 
     def test_doc_only_repo_names_participate_in_cache_signature(self) -> None:
         tempo = load_script("tempo_doc_only_signature_test", "src/source_tempo/cli.py")
-        original = tempo.DOC_ONLY_REPO_NAMES
-        try:
-            before = tempo.filter_signature(include_vendor=False)
-            tempo.DOC_ONLY_REPO_NAMES = {"manuals"}
-            after = tempo.filter_signature(include_vendor=False)
-        finally:
-            tempo.DOC_ONLY_REPO_NAMES = original
+        base = tempo.default_config()
+        before = base.signature(include_vendor=False)
+        after = dataclasses.replace(base, doc_only_repo_names=frozenset({"manuals"})).signature(
+            include_vendor=False
+        )
 
         self.assertNotEqual(before, after)
 
     def test_default_policy_signature_is_pinned(self) -> None:
         tempo = load_script("tempo_signature_pin_test", "src/source_tempo/cli.py")
-        self.assertEqual(tempo.filter_signature(include_vendor=False), "d1d7d3a40ab93799")
-        self.assertEqual(tempo.filter_signature(include_vendor=True), "000ce7a2e8d2c03c")
+        config = tempo.default_config()
+        self.assertEqual(config.signature(include_vendor=False), "d1d7d3a40ab93799")
+        self.assertEqual(config.signature(include_vendor=True), "000ce7a2e8d2c03c")
 
-    def test_packaged_defaults_match_module_constants_and_init_config(self) -> None:
+    def test_packaged_defaults_match_default_config_and_init_config(self) -> None:
         tempo = load_script("tempo_packaged_defaults_test", "src/source_tempo/cli.py")
         packaged = json.loads((REPO_ROOT / "src/source_tempo/defaults.json").read_text(encoding="utf-8"))
         self.assertEqual(tempo.default_config_data("x"), {**packaged, "report_title": "x"})
         self.assertNotIn("report_title", packaged)
-        constants = {
-            "language_by_ext": tempo.LANGUAGE_BY_EXT,
-            "exclude_exts": tempo.EXCLUDE_EXTS,
-            "documentation_by_ext": tempo.DOCUMENTATION_BY_EXT,
-            "doc_only_repo_names": tempo.DOC_ONLY_REPO_NAMES,
-            "language_by_name": tempo.LANGUAGE_BY_NAME,
-            "exclude_dirs": tempo.EXCLUDE_DIRS,
-            "vendor_dirs": tempo.VENDOR_DIRS,
-            "exclude_submodules": tempo.EXCLUDE_SUBMODULES,
-            "extra_repos": tempo.EXTRA_REPOS,
-            "generated_or_minified_markers": tempo.GENERATED_OR_MINIFIED_MARKERS,
-            "generated_or_minified_suffixes": tempo.GENERATED_OR_MINIFIED_SUFFIXES,
-            "generated_or_minified_names": tempo.GENERATED_OR_MINIFIED_NAMES,
-            "test_dir_names": tempo.TEST_DIR_NAMES,
-            "test_file_exact_stems": tempo.TEST_FILE_EXACT_STEMS,
-            "test_file_lower_prefixes": tempo.TEST_FILE_LOWER_PREFIXES,
-            "test_file_lower_suffixes": tempo.TEST_FILE_LOWER_SUFFIXES,
-            "test_file_case_suffixes": tempo.TEST_FILE_CASE_SUFFIXES,
-        }
-        for key, value in constants.items():
+        config = tempo.default_config()
+        for key, value in packaged.items():
+            if key == "schema_version":
+                continue
             with self.subTest(key=key):
-                if isinstance(value, dict):
-                    self.assertEqual(value, packaged[key])
+                actual = getattr(config, key)
+                if isinstance(actual, dict):
+                    self.assertEqual(actual, value)
                 else:
-                    self.assertEqual(sorted(value), sorted(packaged[key]))
+                    self.assertEqual(sorted(actual, key=str), sorted(value, key=str))
 
-    def test_missing_or_malformed_packaged_defaults_fail_at_import(self) -> None:
+    def test_missing_or_malformed_packaged_defaults_stop_the_run(self) -> None:
         source = REPO_ROOT / "src/source_tempo/cli.py"
         for label, content in (("missing", None), ("malformed", "{not json")):
             with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
@@ -1250,16 +1233,80 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 copy.write_bytes(source.read_bytes())
                 if content is not None:
                     (Path(tmp) / "defaults.json").write_text(content, encoding="utf-8")
+                repo = Path(tmp) / "repo"
+                repo.mkdir()
+                subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
                 result = subprocess.run(
-                    [sys.executable, str(copy), "--help"], capture_output=True, text=True
+                    [sys.executable, str(copy), "--root", str(repo), "--no-html"],
+                    capture_output=True, text=True,
                 )
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("packaged defaults unreadable", result.stderr)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("error: packaged defaults unreadable", result.stderr)
                 self.assertIn("defaults.json", result.stderr)
+
+    def test_config_classifies_from_its_own_data(self) -> None:
+        tempo = load_script("tempo_config_object_test", "src/source_tempo/cli.py")
+        base = tempo.default_config()
+        custom = dataclasses.replace(
+            base,
+            language_by_ext={".zz": "Zed"},
+            test_dir_names=frozenset({"checks"}),
+        )
+        self.assertEqual(custom.language_for_path("a/b.zz"), "Zed")
+        self.assertIsNone(custom.language_for_path("a/b.py"))
+        self.assertEqual(custom.source_kind_for_path("checks/x.zz"), "test")
+        self.assertEqual(base.source_kind_for_path("checks/x.py"), "code")
+
+    def test_config_round_trips_through_pickle(self) -> None:
+        tempo = load_script("tempo_config_pickle_test", "src/source_tempo/cli.py")
+        config = tempo.default_config()
+        self.assertEqual(pickle.loads(pickle.dumps(config)), config)
+
+    def test_workers_and_serial_runs_report_identically(self) -> None:
+        # Worker processes must import the module by name, which a file-loaded copy cannot offer.
+        tempo = importlib.import_module("source_tempo.cli")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "fixture"
+            repo.mkdir()
+
+            def git(*args: str) -> None:
+                subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+            git("init", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test User")
+            git("config", "commit.gpgsign", "false")
+            (repo / "src").mkdir()
+            (repo / "tests").mkdir()
+            (repo / "src" / "app.py").write_text("print('one')\n", encoding="utf-8")
+            (repo / "tests" / "test_app.py").write_text(
+                "def test_one():\n    assert True\n", encoding="utf-8"
+            )
+            git("add", ".")
+            git("commit", "-m", "initial")
+
+            def run_report(workers: int) -> dict:
+                json_path = Path(tmp) / f"workers-{workers}.json"
+                argv = [
+                    "source-tempo", "--root", str(repo), "--period", "day", "--days", "3",
+                    "--workers", str(workers), "--no-cache", "--no-html", "--json", str(json_path),
+                ]
+                with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                    self.assertEqual(tempo.main(), 0)
+                document = json.loads(json_path.read_text(encoding="utf-8"))
+                document.pop("generatedAt")
+                document["timeline"].pop("currentProgress")
+                return document
+
+            serial = run_report(1)
+            self.assertGreater(serial["series"]["loc"][-1], 0)
+            self.assertEqual(serial, run_report(2))
 
     def test_documentation_repo_source_like_artifacts_count_as_docs(self) -> None:
         tempo = load_script("tempo_doc_repo_artifacts_test", "src/source_tempo/cli.py")
-        tempo.DOC_ONLY_REPO_NAMES = {"documentation"}
+        config = dataclasses.replace(
+            tempo.default_config(), doc_only_repo_names=frozenset({"documentation"})
+        )
         for repo_name in ("documentation",):
             with self.subTest(repo_name=repo_name), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp) / repo_name
@@ -1282,9 +1329,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 subprocess.run(["git", "commit", "-m", "update docs artifacts"], cwd=repo, check=True, capture_output=True)
                 commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
-                snap = tempo.count_snapshot(repo, commit)
-                churn = tempo.collect_churn_by_period(repo, period="month")
-                source_only_churn = tempo.collect_churn_by_period(repo, include_docs=False, period="month")
+                snap = tempo.count_snapshot(repo, commit, config)
+                churn = tempo.collect_churn_by_period(repo, config, period="month")
+                source_only_churn = tempo.collect_churn_by_period(repo, config, include_docs=False, period="month")
 
                 self.assertEqual(snap.total, 0)
                 self.assertEqual(snap.by_kind, {})

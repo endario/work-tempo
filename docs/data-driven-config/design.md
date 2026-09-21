@@ -72,7 +72,7 @@ Three PRs, each provable on its own so a failure is attributable to packaging, t
 PR 1:
 - `defaults.json` loads to the previous constants, and the pre-change cache signature is reproduced.
 - The wheel and sdist both contain `defaults.json`, and an installed copy runs `--init-config`; this runs in CI on every change.
-- The default constants load at import, so a missing or malformed `defaults.json` makes the import fail with a `RuntimeError` naming the file. A test runs the module in a subprocess with the file absent and asserts a non-zero exit and that message on stderr.
+- The default constants load at import, so a missing or malformed `defaults.json` makes the import fail with a `RuntimeError` naming the file. A test runs the module in a subprocess with the file absent and asserts a non-zero exit and that message on stderr. (PR 2 replaces the constants with `Config`; from then on the same fault stops the run at startup with `error: packaged defaults unreadable: …` and exit code 1.)
 
 PR 2:
 - No default list/dict/set literal remains in `cli.py`, and `git grep -n "^\s*global "` in `src/` is empty.
