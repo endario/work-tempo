@@ -1,6 +1,6 @@
 # App Settings (macOS menu-bar app)
 
-Status: post-critic round 2, converging
+Status: post-critic round 3 (cap reached), converged — build
 Scope: `macos/Sources/WorkTempoCore`, `macos/Sources/WorkTempoMenuBar`
 
 ## Problem
@@ -137,8 +137,8 @@ instead of a hand-rolled JSON file store. The round-1 draft mirrored
 `WorkspaceStore`'s atomic-write-plus-temp-file pattern, but that pattern
 earns its cost for `WorkspaceStore` because workspace state is substantial
 data worth being human-inspectable on disk (the workspace list, selected
-scope, alongside a `Reports/` directory of raw JSON). `AppSettings` is four
-small integers with a platform primitive built for exactly this: atomicity,
+scope, alongside a `Reports/` directory of raw JSON). `AppSettings` is
+three small integers with a platform primitive built for exactly this: atomicity,
 corruption handling, and a standard test seam (`UserDefaults(suiteName:)`)
 all come from the OS instead of ~80 lines of temp-file/replace-item code
 and its own corruption-path tests.
@@ -163,9 +163,19 @@ needs one field. Narrower shape:
   values (`CollectorClient`/`CollectorRequest`, `PortfolioMomentum.build`,
   `.chart(for:)`) keep the same shape they read today, just instance-scoped
   instead of static.
-- `MomentumSummary.init` takes a narrow `windowDays: Int` parameter,
-  replacing the hardcoded `30` — it stays a pure computation with no
-  dependency on `AppSettings` or persistence.
+- `MomentumSummary.init` takes a narrow `maxWindowDays: Int` **input**
+  parameter, replacing the literal `30` inside the existing
+  `max(0, closedEnd - 30)` cap calculation (`MomentumSummary.swift:82`).
+  Named distinctly from the type's existing `public let windowDays: Int`
+  **output** property (critic round 3): that property is already a
+  *derived* value — `max(1, closedEnd - currentStart)`, bounded by
+  `firstTrackedDay` so the window never starts before the workspace had any
+  source or churn (`docs/macos-app.md:72`) — not a passthrough of the cap.
+  Renaming the parameter to match the output property would have read as
+  "assign the input onto the property," silently dropping that bound; the
+  derivation itself is unchanged, only its literal `30` becomes
+  `maxWindowDays`. Stays a pure computation with no dependency on
+  `AppSettings` or persistence.
 - **`PortfolioMomentum.build`'s two additional `30` literals**
   (`.swift:237,239` — the aggregate momentum slice and its
   `momentumLabels.count >= 30` gate) also become `windowDays`. Missed in
@@ -179,30 +189,59 @@ needs one field. Narrower shape:
 - `DashboardSnapshot`'s two initializers take `staleInterval` and
   `windowDays` parameters, replacing the `3_600`/`30` fallback defaults
   (86,400 stays a literal per Non-goals).
-- **All four widened parameters above are required, with no default
+- **All three widened parameters above are required, with no default
   value** (critic round 2) — `staleInterval`, `requiredDayCount`,
-  `windowDays` on the affected initializers take no `= 3_600`/`= 30`
-  fallback. A default value would silently reintroduce the exact
-  duplication this design exists to collapse at the next call site
+  `maxWindowDays`/`windowDays` on the affected initializers take no
+  `= 3_600`/`= 30` fallback. A default value would silently reintroduce the
+  exact duplication this design exists to collapse at the next call site
   (a future test or caller that omits the argument); every call site,
   including tests, passes the value explicitly, and `AppSettings.default`
   becomes the single place today's numbers are pinned.
-- `README.md`'s "up to thirty" description of the menu-bar headline metric
-  needs the same update — tracked under Testing/doc-refresh below, not
-  forgotten as a fourth silent consumer of the literal.
+- `README.md`'s "up to thirty" description of the menu-bar headline metric,
+  and `docs/macos-app.md`'s own pins on the same numbers (lines 47–59:
+  `--days 185` and the hourly schedule; 88–92: the 30-label momentum gate
+  and 184-day chart window; 111: the no-timeout rule) — both need the same
+  update, tracked under Testing/doc-refresh below (critic round 3: the
+  architecture doc is the fuller contract, `README.md` is its short copy).
 
-`AppSettings` itself (the full four-field struct) stays confined to
-`AppModel`, the `UserDefaults` read/write, and the Settings scene — it does
-not leak into `WorkTempoCore`'s pure computation types.
+`AppSettings` — the struct itself, its defaults, clamp-on-load, and the
+`UserDefaults` read/write — lives in **`WorkTempoCore`**, beside
+`WorkspaceStore` (critic round 3): `macos/Package.swift` only exposes a
+`WorkTempoCoreTests` target, so code living in the `WorkTempoMenuBar`
+executable isn't importable by tests. It stays confined there and in the
+Settings scene — it does not leak into `WorkTempoCore`'s pure computation
+types (`MomentumSummary`, `PortfolioMomentum`), which keep taking bare
+`Int`s.
 
-`AppModel` owns the live `AppSettings`, loaded at `start()` alongside
-workspace state.
+`AppModel` owns the live `AppSettings` as a stored property, loaded at
+`start()` — see Launch binding, below.
+
+## Launch binding (critic round 3, blocking)
+
+Round 1 and round 2 only specified how settings apply on Settings *save*.
+`AppModel.init` currently builds `coordinator` from a default
+`RefreshCoordinator()` (its own constant defaults), and `start()` fires
+`requestRefresh(.launch)` and starts a hardcoded-3,600s `timerTask` without
+ever reading persisted settings. As specified through round 2, a value
+saved in one session would sit unused until the user reopened Settings and
+hit Save *again* in every subsequent session — persistence would exist but
+never actually take effect on its own.
+
+Fix: `AppModel` loads `AppSettings` (a synchronous `UserDefaults` read) and
+stores it as a property before doing anything else. The default
+`coordinator: RefreshCoordinator` parameter expression becomes
+`RefreshCoordinator(settings: AppSettings.load())` (a small convenience
+initializer deriving `staleInterval`/`requiredDayCount`), so the
+production zero-argument `AppModel()` path is correctly configured from
+first construction; tests keep injecting their own coordinator directly,
+unaffected. `start()`'s `timerTask` reads the loaded `refreshCadenceSeconds`
+for its sleep duration instead of the literal `3_600`.
 
 ## Apply behavior
 
 On Settings save, `AppModel`:
 
-1. Persists the new `AppSettings` to `UserDefaults`.
+1. Persists the new `AppSettings` to `UserDefaults` and updates the stored property.
 2. Cancels and restarts `timerTask` with the new cadence.
 3. Reconstructs `RefreshCoordinator` with the new `staleInterval`/`requiredDayCount`.
 4. Triggers an immediate `requestRefresh(.manual)` scoped to `.all`.
@@ -222,6 +261,17 @@ timer tick rather than starting it immediately — acceptable, since the
 workspace on every subsequent tick until it's satisfied; the backfill isn't
 lost, just deferred by up to one cadence interval.
 
+**Concurrency note (critic round 3, follow-up):** `requestRefresh`'s task
+body reads `coordinator` (an `AppModel` property) at two points — once to
+call `.request(...)`, later to call `.finish()`. If step 3 reassigns
+`self.coordinator` to a new actor while that task is between those two
+points, `.finish()` would land on the *new* instance instead of the one
+`.request()` was actually called against. Harmless in isolation (both
+calls are idempotent, and the orphaned old instance is simply
+unreferenced), but the in-flight task captures its coordinator as a local
+`let` at the top of its body instead of re-reading the property, so the
+race can't happen at all rather than relying on it being harmless.
+
 ## Known limitation, mitigated not fixed
 
 `RefreshCoordinator.unattendedTarget`'s short-history branch
@@ -232,23 +282,38 @@ whose Git history is younger than the configured window never reaches
 `requiredDayCount`, so today it's re-collected on every timer tick,
 indefinitely, for repos younger than 186 days. Wider history presets (up to
 365d) and a lower cadence floor (15m vs. the current fixed 1h) would
-otherwise compound this to roughly 4x today's worst case, on a much larger
-affected population, on the user's own machine (critic round 2, Strongest
-objection).
+otherwise widen the affected population and, naively, the frequency too
+(critic round 2, Strongest objection).
 
-**Mitigation, in scope:** the short branch also requires
-`now.timeIntervalSince(generatedAt) >= staleInterval` (matching the stale
-branch's own throttle), using the value `RefreshCoordinator.init` already
-takes under this design — two lines, no new capability, same file and
-struct this design already modifies. A young repo now recollects at most
-once per `staleInterval`, not on every tick.
+**Round-2 mitigation was ineffective (critic round 3 correction):** gating
+the short branch on `now.timeIntervalSince(generatedAt) >= staleInterval`
+does not throttle anything, because the timer already ticks exactly once
+per `staleInterval` (they're the same value by construction) — the gate is
+satisfied by the time the next tick arrives regardless, so "at most once
+per `staleInterval`" and "on every tick" describe the identical schedule.
+A 15-minute cadence would still fully recollect a permanently-short repo
+roughly every 15 minutes, on the no-timeout path.
+
+**Corrected mitigation, in scope:** the short branch requires
+`now.timeIntervalSince(generatedAt) >= max(staleInterval, 3_600)` — floored
+at today's fixed hourly rate regardless of the configured cadence. A
+healthy repo still benefits from a 15-minute cadence on its bounded,
+120-second-timeout path; a repo that can never fill the window is capped at
+today's frequency no matter how low cadence is set. This decouples the
+unbounded-collect branch from the cadence knob entirely, which is the
+actual goal (not "throttle by the same number that's already the tick
+rate"). **This lands in PR 2 only** (see Implementation sequencing) — it's
+an observable behavior change (a short workspace refreshed via `.wake` or
+`.manual` shortly after a prior short collection is no longer immediately
+re-selected), so it doesn't belong in the no-op refactor PR even though the
+floor happens to equal PR 1's literal value.
 
 **Deferred, out of scope:** the collector reporting its earliest available
 day, so "short" means the requested window extends past actual history
 rather than merely `dayCount < required`, would stop the recollection
-entirely instead of just throttling it. Left for a future change. The
+entirely instead of just capping its rate. Left for a future change. The
 manual verification pass (Testing, below) includes checking a young test
-repository against the 365d preset to confirm the throttled behavior is
+repository against the 365d preset to confirm the capped behavior is
 merely wasteful, not broken.
 
 ## Testing
@@ -268,28 +333,46 @@ merely wasteful, not broken.
   case covers a short-history workspace recollected once, then not
   re-selected again before `staleInterval` elapses (the round-2 throttle).
 - Manual pass: gear button opens/fronts/closes the Settings window from the
-  `LSUIElement` app (Activation risk, above); a young test workspace at the
-  365d history preset behaves as described in Known limitation, not worse.
-- `README.md`'s headline-metric description updated to match
+  `LSUIElement` app (Activation risk, above) — done **first** in PR 2,
+  before the form is filled in, since it's the one mechanism in this
+  design nobody has executed; a young test workspace at the 365d history
+  preset behaves as described in Known limitation, not worse.
+- `README.md`'s headline-metric description and `docs/macos-app.md`'s
+  pinned numbers (days, schedule, gate, timeout) updated to match
   (doc-refresh, SOP S7).
+- A hand-edited, in-range value that matches no preset (e.g.
+  `historyDays: 100`) passes the clamp but selects no `Picker` option
+  (critic round 3, follow-up). Accepted as-is: the UI can never write such
+  a value, and adding a snap-to-nearest-preset rule for a state only a
+  hand-edited file can reach is exactly the speculative handling this
+  design otherwise avoids.
 
-## Implementation sequencing (critic round 2)
+## Implementation sequencing
 
-Two self-contained PRs, in order:
+Two self-contained PRs, in order (critic round 2, sequencing corrected
+round 3):
 
-1. **Behavior-preservation refactor, no settings surface at all**:
-   instance-scoped `HistoryWindow`, required (non-defaulted)
-   `windowDays`/`staleInterval`/`requiredDayCount` parameters, the
-   `PortfolioMomentum.build` gate/slice fix, the `unattendedTarget`
-   throttle, and the `README.md` update — all exercised with today's exact
+1. **Behavior-preservation refactor, no settings surface, no behavior
+   change**: instance-scoped `HistoryWindow`, required (non-defaulted)
+   `maxWindowDays`/`staleInterval`/`requiredDayCount` parameters, the
+   `PortfolioMomentum.build` gate/slice fix, and the `README.md`/
+   `docs/macos-app.md` updates — all exercised with today's exact literal
    values, guarded by the `AppSettings.default`-values regression test.
-   Independently verifiable as a behavioral no-op; de-risks the largest
-   diff before any UI exists.
-2. **`AppSettings` + `UserDefaults` + Settings scene + apply behavior**, on
-   top of plumbing that already accepts the values.
+   Independently verifiable as a true behavioral no-op; de-risks the
+   largest diff before any UI or persistence exists. The
+   `unattendedTarget` throttle is **not** in this PR (critic round 3: it
+   changes observable behavior on `.wake`/`.manual` triggers even at
+   today's cadence value, so bundling it here would make the "no-op"
+   claim false).
+2. **`AppSettings` (in `WorkTempoCore`) + `UserDefaults` + launch binding +
+   Settings scene + apply behavior + the `unattendedTarget` floor**, on top
+   of plumbing that already accepts the values. Starts by verifying the
+   `openSettings`/`NSApp.activate` mechanism opens, fronts, and closes the
+   window from a running `LSUIElement` build before writing the rest of
+   the form.
 
-This also isolates any actual behavior change (new defaults a user picks,
-the throttle kicking in) to PR 2, where it's attributable to the feature
+This isolates every actual behavior change — new defaults a user picks,
+the recollection floor — to PR 2, where it's attributable to the feature
 rather than hidden inside a refactor.
 
 ## Resolved from round 1
@@ -306,8 +389,10 @@ rather than hidden inside a refactor.
 
 ## Resolved from round 2
 
-- **Young-repo recollection amplification:** mitigated with a
-  `staleInterval` throttle on `unattendedTarget`'s short branch — see Known
+- **Young-repo recollection amplification:** a throttle was proposed on
+  `unattendedTarget`'s short branch — but round 3 found the specific gate
+  (`>= staleInterval`) had no actual effect, since the timer ticks at
+  exactly that interval already. Corrected in round 3 — see Known
   limitation.
 - **Defaulted parameters silently reintroducing drift:** all widened
   parameters are required, not defaulted — see Plumbing.
@@ -319,3 +404,26 @@ rather than hidden inside a refactor.
   confirmed as the considered choice (Apply behavior) — a closure-based
   provider would spread settings reads across every timer tick to save one
   struct rebuild per save; explicitly not adopted.
+
+## Resolved from round 3 (final round — cap reached, verdict: build)
+
+- **Ineffective throttle:** floored at `max(staleInterval, 3_600)` instead
+  of `staleInterval` alone, decoupling the unbounded short-history path
+  from the cadence knob — see Known limitation. Moved to PR 2, since it's
+  a real behavior change, not a no-op.
+- **Settings never bound at launch:** `AppModel` now loads `AppSettings`
+  before constructing its default `coordinator` and before `start()`'s
+  timer/launch-refresh — see Launch binding. Without this, persistence
+  would exist but never take effect on its own across a relaunch.
+- **`MomentumSummary` parameter/property naming collision:** the new input
+  is `maxWindowDays`, distinct from the existing derived output property
+  `windowDays`, preserving the `firstTrackedDay` bound — see Plumbing.
+- **`AppSettings` module placement:** lives in `WorkTempoCore` (the only
+  test-importable target), not `WorkTempoMenuBar` — see Plumbing.
+- **Doc-refresh scope:** `docs/macos-app.md`'s pinned numbers, not just
+  `README.md`'s — see Plumbing, Testing.
+- **Coordinator reassignment race:** the in-flight refresh task captures
+  its coordinator as a local at task start instead of re-reading the
+  property — see Apply behavior, concurrency note.
+- **Leftover round-2 field-count references** ("four integers"/"four-field
+  struct") corrected to three throughout.
