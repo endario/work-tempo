@@ -77,6 +77,15 @@ alongside `MenuBarExtra`), opened via a gear-icon button added to
 `DashboardView`'s header action row (beside refresh/add), calling the
 `openSettings` environment action.
 
+**Activation risk.** This app runs `LSUIElement` (no Dock icon, no regular
+app menu). `AppModel.chooseWorkspace()` already calls
+`NSApp.activate(ignoringOtherApps: true)` before presenting an
+`NSOpenPanel` — existing evidence that windows raised from this app need
+explicit activation to come to the front reliably in an accessory app. The
+gear button's action does the same `NSApp.activate` call before
+`openSettings`, and this gets a manual open/front/close verification pass
+(not just a compile check) before the design is considered converged.
+
 Three `Picker` rows, fixed presets (no free-text entry, so invalid values
 can't be entered through the UI):
 
