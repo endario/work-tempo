@@ -302,11 +302,21 @@ healthy repo still benefits from a 15-minute cadence on its bounded,
 today's frequency no matter how low cadence is set. This decouples the
 unbounded-collect branch from the cadence knob entirely, which is the
 actual goal (not "throttle by the same number that's already the tick
-rate"). **This lands in PR 2 only** (see Implementation sequencing) — it's
-an observable behavior change (a short workspace refreshed via `.wake` or
-`.manual` shortly after a prior short collection is no longer immediately
-re-selected), so it doesn't belong in the no-op refactor PR even though the
-floor happens to equal PR 1's literal value.
+rate"). **The fix also has to exclude short targets from the stale branch
+immediately below it** (found while writing the implementation plan, after
+this round closed): that branch's own `healthy.filter` runs over every
+healthy target regardless of `dayCount`, so a short-but-old-enough-by-
+`staleInterval`-alone workspace would still be re-selected through it,
+bypassing the floor — `request()`'s timeout choice keys off
+`dayCount < requiredDayCount` independent of which branch made the
+selection, so that path still produces an unbounded collect. Three lines,
+not two; see `docs/settings/plan.md`, Task 13, for the exact diff and a
+test that fails against the two-line version to prove it. **This lands in
+PR 2 only** (see Implementation sequencing) — it's an observable behavior
+change (a short workspace refreshed via `.wake` or `.manual` shortly after
+a prior short collection is no longer immediately re-selected), so it
+doesn't belong in the no-op refactor PR even though the floor happens to
+equal PR 1's literal value.
 
 **Deferred, out of scope:** the collector reporting its earliest available
 day, so "short" means the requested window extends past actual history
