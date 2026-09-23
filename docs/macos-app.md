@@ -119,14 +119,16 @@ three values, persisted via `UserDefaults`:
   growth hero metrics. Default 30 days, never more than the configured
   history window.
 - **Refresh cadence** — how often the app checks for background
-  refreshes, and how old a report can get before it's flagged stale.
-  Default 1 hour. The app also refreshes on launch and when the Mac
-  wakes, independent of this cadence.
+  refreshes, and how old a report can get before it's flagged stale in
+  a single-workspace view. Default 1 hour. All Workspaces keeps a
+  fixed 24-hour staleness threshold regardless of cadence. The app
+  also refreshes on launch and when the Mac wakes, independent of this
+  cadence.
 
-Changing history or headline window triggers an immediate refresh
-across every tracked workspace. A workspace whose Git history is
-younger than the configured window is recollected at most once per
-hour, regardless of a lower configured cadence — a permanently short
+Any Save that changes a setting triggers an immediate refresh across
+every tracked workspace. A workspace whose Git history is younger
+than the configured window is recollected at most once per hour,
+regardless of a lower configured cadence — a permanently short
 workspace does not become more expensive just because cadence dropped.
 
 ## Errors and empty states

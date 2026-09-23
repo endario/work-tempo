@@ -253,13 +253,11 @@ re-collection logic needed. A shrunk history window needs no special
 handling: the collector and chart already slice to whatever window is
 requested.
 
-**Edge case (named per critic round 1):** step 4 is silently dropped if a
-refresh is already in flight (`AppModel.swift:131`, `refreshTask != nil`
-guard). Saving settings mid-refresh delays the backfill until the next
-timer tick rather than starting it immediately — acceptable, since the
-`dayCount < requiredDayCount` condition keeps re-selecting the same
-workspace on every subsequent tick until it's satisfied; the backfill isn't
-lost, just deferred by up to one cadence interval.
+**Edge case (named per critic round 1):** step 4 would be silently dropped if
+a refresh is already in flight (`AppModel.swift:131`, `refreshTask != nil`
+guard). Fixed: `applySettings` cancels the active refresh and awaits it
+before requesting the new one, the same pattern `select()` uses, so the
+sweep restarts immediately instead of waiting on a guard.
 
 **Concurrency note (critic round 3, follow-up):** `requestRefresh`'s task
 body reads `coordinator` (an `AppModel` property) at two points — once to
