@@ -22,5 +22,9 @@ struct WorkTempoApp: App {
             MenuBarLabel(snapshot: model.snapshot)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView(model: model)
+        }
     }
 }
