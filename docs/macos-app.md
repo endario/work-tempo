@@ -48,13 +48,15 @@ For a workspace the app runs:
 work-tempo --root <root> --period day --days 185 --workers 2 --no-html --json <report-path>
 ```
 
+`--days` is `historyDays + 1` from the user's configured history window (default 184, so 185), not a fixed constant.
+
 The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then the inherited `PATH`; fixed user locations win over an ambient GUI `PATH`. Collection never runs on the main actor, and stdout/stderr are bounded in memory.
 
-185 daily labels cover six calendar months (at most 184 closed days plus the open day), even when workspaces were last collected on different days.
+185 daily labels cover six calendar months (at most 184 closed days plus the open day) at the default history window; the actual count follows the configured History setting, even when workspaces were last collected on different days.
 
 **Scheduling.**
-- One collector process runs at a time. A launch, hourly, or wake trigger arriving during a run is dropped, not queued.
-- Unattended triggers (launch, hourly timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than an hour, then ones whose last attempt failed. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
+- One collector process runs at a time. A launch, timer, or wake trigger arriving during a run is dropped, not queued.
+- Unattended triggers (launch, timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than the refresh cadence (default 1 hour, configurable in Settings), then ones whose last attempt failed. A workspace too short to ever fill its history window is recollected at most once per hour regardless of a lower configured cadence. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
 - Manual refresh in All Workspaces runs every tracked workspace sequentially, showing the active workspace and `N of M` progress. A failure is recorded on that workspace and the sweep continues. Cancelling stops the active collector and drops the rest of the queue. A restart also drops it and never resumes a manual sweep on its own.
 - A first collection (no report, or too little history) is attended, cancellable, and has no timeout. Routine refreshes time out after 120 seconds. Cancellation and timeout kill the collector's process group and leave the previous report untouched.
 
@@ -70,7 +72,7 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 daily churn = (source additions + source deletions over the window) / days in window
 ```
 
-The window is the trailing closed days, up to 30, starting no earlier than the first day the workspace had source or churn. Documentation churn and the current partial day are excluded. The second hero metric is net source LOC growth (additions minus deletions) over the same window. Both show their definitions in a tooltip.
+The window is the trailing closed days — 30 by default, configurable in Settings and never more than the configured history window — starting no earlier than the first day the workspace had source or churn. Documentation churn and the current partial day are excluded. The second hero metric is net source LOC growth (additions minus deletions) over the same window. Both show their definitions in a tooltip.
 
 The menu-bar item shows the same daily churn, compact, with a `/d` suffix (for example `12.3K/d`). It shows `--` before any report exists, a spinner glyph while refreshing, and a warning marker when data is stale or a refresh failed.
 
@@ -105,6 +107,27 @@ A 430-point popover with a fixed header and footer:
 6. Footer: remove the selected workspace, quit.
 
 Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Hue names the kind (blue code, amber tests, gray docs) and lightness names the direction (additions vs deletions); each step clears 3:1 contrast against its background. The Dock icon is suppressed with `LSUIElement`.
+
+## Settings
+
+A native Settings window (gear icon in the popover header) configures
+three values, persisted via `UserDefaults`:
+
+- **History** — how far back the collector fetches and the charts
+  display. Default 6 months (184 days).
+- **Headline window** — the rolling window behind the churn/day and net
+  growth hero metrics. Default 30 days, never more than the configured
+  history window.
+- **Refresh cadence** — how often the app checks for background
+  refreshes, and how old a report can get before it's flagged stale.
+  Default 1 hour. The app also refreshes on launch and when the Mac
+  wakes, independent of this cadence.
+
+Changing history or headline window triggers an immediate refresh
+across every tracked workspace. A workspace whose Git history is
+younger than the configured window is recollected at most once per
+hour, regardless of a lower configured cadence — a permanently short
+workspace does not become more expensive just because cadence dropped.
 
 ## Errors and empty states
 

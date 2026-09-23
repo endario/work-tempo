@@ -10,7 +10,7 @@ It measures:
 - Documentation LOC and churn as separate informational metrics.
 
 
-The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing closed days, up to thirty. An individual workspace remains selectable from the header.
+The optional native macOS menu-bar app opens on an aggregate of all tracked workspaces. Its menu-bar value and primary dashboard metric show source churn per day over the trailing closed days — 30 by default, configurable in Settings. An individual workspace remains selectable from the header.
 
 Repository comparison and component classification are outside Work Tempo's scope.
 
