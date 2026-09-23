@@ -106,7 +106,7 @@ public extension ChartTimeline {
             accumulators[last].docDeleted += docDeleted[index]
         }
 
-        // The default 184 closed days gives 6 whole months, dropping the partial
+        // The default 365 closed days gives 12 whole months, dropping the partial
         // oldest month; the floor of 2 keeps a short window's partial previous
         // month visible.
         let monthCount = max(2, Int((Double(closedDayCount) / 30.44).rounded()))

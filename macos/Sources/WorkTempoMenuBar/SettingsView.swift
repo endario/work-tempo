@@ -39,6 +39,8 @@ struct SettingsView: View {
                     Text("3 months (90d)").tag(90)
                     Text("6 months (184d)").tag(184)
                     Text("12 months (365d)").tag(365)
+                    Text("18 months (548d)").tag(548)
+                    Text("24 months (730d)").tag(730)
                 }
                 .onChange(of: historyDays) { _, newValue in
                     if headlineWindowDays > newValue {

@@ -45,14 +45,14 @@ In memory the scope is a `DisplayScope` enum, `all` or `workspace(Workspace)`. R
 For a workspace the app runs:
 
 ```text
-work-tempo --root <root> --period day --days 185 --workers 2 --no-html --json <report-path>
+work-tempo --root <root> --period day --days 366 --workers 2 --no-html --json <report-path>
 ```
 
-`--days` is `historyDays + 1` from the user's configured history window (default 184, so 185), not a fixed constant.
+`--days` is `historyDays + 1` from the user's configured history window (default 365, so 366), not a fixed constant.
 
 The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then the inherited `PATH`; fixed user locations win over an ambient GUI `PATH`. Collection never runs on the main actor, and stdout/stderr are bounded in memory.
 
-185 daily labels cover six calendar months (at most 184 closed days plus the open day) at the default history window; the actual count follows the configured History setting, even when workspaces were last collected on different days.
+366 daily labels cover twelve calendar months (at most 365 closed days plus the open day) at the default history window; the actual count follows the configured History setting, even when workspaces were last collected on different days.
 
 **Scheduling.**
 - One collector process runs at a time. A launch, timer, or wake trigger arriving during a run is dropped, not queued.
@@ -87,7 +87,7 @@ Two guards refuse to sum rather than produce a wrong number:
 - **Overlap.** If the same resolved repository path appears in two workspaces' `scope.repositories`, aggregation is refused and both workspaces and the path are named. Reports carry workspace-level series, so shared history cannot be deduplicated after the fact.
 - **Timezone.** All contributors must have been collected under the same timezone; matching date strings from different day boundaries are never summed.
 
-**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. The headline uses up to 30 labels ending there; charts use the trailing 184 closed labels, plus the open day only when every contributor has it. If the cohort lacks 30 common closed labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
+**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. The headline uses up to 30 labels ending there; charts use the trailing 365 closed labels, plus the open day only when every contributor has it. If the cohort lacks 30 common closed labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
 
 **Summed series.** Source LOC (code and tests), documentation LOC, code and test additions and deletions, and documentation churn.
 
@@ -102,7 +102,7 @@ A 430-point popover with a fixed header and footer:
 1. Header: scope menu (All Workspaces and each workspace), last refresh, refresh, and add-workspace.
 2. Hero: churn per day and net source LOC, each with a sparkline. The open day appears as a faded trailing segment marked to-date.
 3. Metric columns: source, code, tests, docs.
-4. **Source LOC** chart: day-end code and test lines stacked above the axis across six months, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
+4. **Source LOC** chart: day-end code and test lines stacked above the axis across twelve months, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
 5. **Monthly Churn** chart: the same six series by calendar month. The current month keeps its full slot but fills only the elapsed fraction.
 6. Footer: remove the selected workspace, quit.
 
@@ -114,7 +114,7 @@ A native Settings window (gear icon in the popover header) configures
 three values, persisted via `UserDefaults`:
 
 - **History** — how far back the collector fetches and the charts
-  display. Default 6 months (184 days).
+  display. Default 12 months (365 days).
 - **Headline window** — the rolling window behind the churn/day and net
   growth hero metrics. Default 30 days, never more than the configured
   history window.

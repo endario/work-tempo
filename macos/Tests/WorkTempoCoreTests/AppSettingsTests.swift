@@ -2,11 +2,11 @@ import XCTest
 @testable import WorkTempoCore
 
 final class AppSettingsTests: XCTestCase {
-    func testDefaultReproducesTodaysHardcodedValues() {
-        XCTAssertEqual(AppSettings.default.historyDays, 184)
+    func testDefaultValues() {
+        XCTAssertEqual(AppSettings.default.historyDays, 365)
         XCTAssertEqual(AppSettings.default.headlineWindowDays, 30)
         XCTAssertEqual(AppSettings.default.refreshCadenceSeconds, 3_600)
-        XCTAssertEqual(HistoryWindow(historyDays: AppSettings.default.historyDays).collectorDays, 185)
+        XCTAssertEqual(HistoryWindow(historyDays: AppSettings.default.historyDays).collectorDays, 366)
     }
 
     private func makeIsolatedDefaults() -> UserDefaults {
@@ -49,6 +49,16 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(loaded.historyDays, 30, "historyDays floors at 30")
         XCTAssertEqual(loaded.headlineWindowDays, 30, "999 clamps against the already-clamped historyDays of 30, not a fixed ceiling — headlineWindowDays has no static upper bound")
         XCTAssertEqual(loaded.refreshCadenceSeconds, 900, "refreshCadenceSeconds floors at 900 (15 minutes)")
+    }
+
+    func testLoadClampsHistoryDaysToUpperBound() {
+        let defaults = makeIsolatedDefaults()
+        let outOfRange = AppSettings(historyDays: 999, headlineWindowDays: 30, refreshCadenceSeconds: 3_600)
+        outOfRange.save(userDefaults: defaults)
+
+        let loaded = AppSettings.load(userDefaults: defaults)
+
+        XCTAssertEqual(loaded.historyDays, 730, "historyDays ceilings at 730")
     }
 
     func testHeadlineClampsAgainstPostClampHistoryNotRawHistory() {
