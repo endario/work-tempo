@@ -12,7 +12,7 @@ final class AppSettingsTests: XCTestCase {
     private func makeIsolatedDefaults() -> UserDefaults {
         let suiteName = "AppSettingsTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        addTeardownBlock { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
         return defaults
     }
 
