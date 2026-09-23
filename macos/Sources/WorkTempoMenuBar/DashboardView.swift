@@ -1,3 +1,4 @@
+import AppKit
 import WorkTempoCore
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct DashboardView: View {
     let onAdd: () -> Void
     let onRemove: () -> Void
     let onQuit: () -> Void
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,12 +56,18 @@ struct DashboardView: View {
                 )
                     .disabled(model.workspaces.isEmpty)
             }
+            actionButton("gearshape", help: "Settings", action: openSettingsWindow)
             actionButton("plus", help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
         .padding(.bottom, 2)
 
+    }
+
+    private func openSettingsWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
     }
 
     private var workspaceMenu: some View {
