@@ -13,9 +13,9 @@ final class AppModel: ObservableObject {
 
     private let store: WorkspaceStore
     private let controller: WorkspaceController
-    private let coordinator: RefreshCoordinator
+    private var coordinator: RefreshCoordinator
     private let resolver: CollectorResolver
-    private let settings: AppSettings = .default
+    private(set) var settings: AppSettings
     private var refreshTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
     private var wakeObserver: AnyCancellable?
@@ -24,13 +24,14 @@ final class AppModel: ObservableObject {
 
     init(
         store: WorkspaceStore = WorkspaceStore(),
-        coordinator: RefreshCoordinator = RefreshCoordinator(settings: .default),
+        coordinator: RefreshCoordinator = RefreshCoordinator(settings: AppSettings.load()),
         resolver: CollectorResolver = CollectorResolver()
     ) {
         self.store = store
         controller = WorkspaceController(store: store)
         self.coordinator = coordinator
         self.resolver = resolver
+        settings = AppSettings.load()
         snapshot = DashboardSnapshot(
             workspace: nil,
             report: nil,
@@ -122,18 +123,23 @@ final class AppModel: ObservableObject {
             applyError(error.localizedDescription)
         }
 
-        timerTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3_600))
-                guard !Task.isCancelled else { return }
-                self?.requestRefresh(.timer)
-            }
-        }
+        startTimer()
         wakeObserver = NSWorkspace.shared.notificationCenter
             .publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in
                 Task { @MainActor in self?.requestRefresh(.wake) }
             }
+    }
+
+    private func startTimer() {
+        let cadence = settings.refreshCadenceSeconds
+        timerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(cadence))
+                guard !Task.isCancelled else { return }
+                self?.requestRefresh(.timer)
+            }
+        }
     }
 
     private func requestRefresh(_ trigger: RefreshTrigger, scopeOverride: DisplayScope? = nil) {
