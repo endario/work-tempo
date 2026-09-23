@@ -107,7 +107,7 @@ final class AppModel: ObservableObject {
         timerTask?.cancel()
         startTimer()
         coordinator = RefreshCoordinator(settings: newSettings)
-        requestRefresh(.manual, scopeOverride: .all)
+        Task { await cancelActiveRefresh(); requestRefresh(.manual, scopeOverride: .all) }
     }
 
     func removeSelectedWorkspace() {
