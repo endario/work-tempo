@@ -1,9 +1,13 @@
 import Foundation
 
-public enum HistoryWindow {
-    // Six consecutive calendar months can span 184 days (March through August).
-    public static let chartClosedDays = 184
-    public static let collectorDays = chartClosedDays + 1
+public struct HistoryWindow: Sendable {
+    public let chartClosedDays: Int
+    public let collectorDays: Int
+
+    public init(historyDays: Int) {
+        chartClosedDays = historyDays
+        collectorDays = historyDays + 1
+    }
 }
 
 public enum PortfolioError: Error, Equatable, LocalizedError, Sendable {
