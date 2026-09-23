@@ -101,6 +101,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func applySettings(_ newSettings: AppSettings) {
+        settings = newSettings
+        settings.save()
+        timerTask?.cancel()
+        startTimer()
+        coordinator = RefreshCoordinator(settings: newSettings)
+        requestRefresh(.manual, scopeOverride: .all)
+    }
+
     func removeSelectedWorkspace() {
         guard let workspace = selectedWorkspace else { return }
         Task {
@@ -145,6 +154,12 @@ final class AppModel: ObservableObject {
     private func requestRefresh(_ trigger: RefreshTrigger, scopeOverride: DisplayScope? = nil) {
         guard !workspaces.isEmpty, refreshTask == nil else { return }
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        // Captured here, not re-read from self.coordinator inside the task:
+        // a settings save mid-flight can reassign self.coordinator, and
+        // this task must keep finishing the instance it actually started
+        // its request on.
+        let activeCoordinator = coordinator
+        let collectorDays = historyWindow.collectorDays
 
         refreshTask = Task { [weak self] in
             guard let self else { return }
@@ -164,7 +179,7 @@ final class AppModel: ObservableObject {
                     lastAttemptFailed: lastAttemptFailed
                 )
             }
-            guard let plans = await coordinator.request(
+            guard let plans = await activeCoordinator.request(
                 trigger: trigger,
                 scope: scopeOverride ?? state.scope,
                 targets: targets,
@@ -186,7 +201,7 @@ final class AppModel: ObservableObject {
                         workspace: plan.workspace,
                         reportURL: store.reportURL(for: plan.workspace),
                         timeout: plan.timeout,
-                        collectorDays: historyWindow.collectorDays
+                        collectorDays: collectorDays
                     ))
                     apply(await controller.succeedRefresh(ticket, workspace: plan.workspace, report: report))
                 } catch CollectorError.cancelled {
@@ -204,7 +219,7 @@ final class AppModel: ObservableObject {
                 }
             }
             refreshProgress = nil
-            await coordinator.finish()
+            await activeCoordinator.finish()
             refreshTask = nil
         }
     }
