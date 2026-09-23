@@ -23,8 +23,6 @@ out of scope — see Non-goals.
 
 - Let the user configure history window, headline window, and refresh
   cadence from a native Settings UI, without editing JSON by hand.
-- Default values reproduce today's exact behavior — upgrading is a no-op
-  until the user opens Settings.
 - Unify refresh cadence and staleness threshold into one setting (they
   already shared a literal value; keeping them separately-defaulted was
   incidental, not intentional).
@@ -53,12 +51,12 @@ out of scope — see Non-goals.
 
 ```swift
 public struct AppSettings: Codable, Equatable, Sendable {
-    public var historyDays: Int           // default 184
+    public var historyDays: Int           // default 365
     public var headlineWindowDays: Int    // default 30
     public var refreshCadenceSeconds: Int // default 3_600
 
     public static let `default` = AppSettings(
-        historyDays: 184,
+        historyDays: 365,
         headlineWindowDays: 30,
         refreshCadenceSeconds: 3_600
     )
@@ -90,7 +88,7 @@ that the UI could never produce — `refreshCadenceSeconds: 0` turns the
 coordinator; `historyDays: 0` yields `collectorDays: 1` and a degenerate
 chart. `AppSettings.load()` clamps **all three fields**, not just the
 headline/history pair, to fixed bounds matching the preset ranges:
-`historyDays` to `30...365`, `headlineWindowDays` to `7...historyDays`,
+`historyDays` to `30...730`, `headlineWindowDays` to `7...historyDays`,
 `refreshCadenceSeconds` to `900...14_400` (15m...4h). Clamping order
 matters (critic round 2): `historyDays` clamps first, then
 `headlineWindowDays` clamps against that **already-clamped** `historyDays`
@@ -119,7 +117,7 @@ gear button's action does the same `NSApp.activate` call before
 Three `Picker` rows, fixed presets (no free-text entry, so invalid values
 can't be entered through the UI):
 
-- **History**: 1 month (30d) / 3 months (90d) / **6 months (184d, default)** / 12 months (365d)
+- **History**: 1 month (30d) / 3 months (90d) / 6 months (184d) / **12 months (365d, default)** / 18 months (548d) / 24 months (730d)
 - **Headline window**: 7d / 14d / **30d (default)** / 60d / 90d, filtered to `<= historyDays`
 - **Refresh cadence**: 15m / 30m / **1h (default)** / 2h / 4h
 

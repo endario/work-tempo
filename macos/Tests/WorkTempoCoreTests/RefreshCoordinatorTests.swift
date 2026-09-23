@@ -238,6 +238,19 @@ final class RefreshCoordinatorTests: XCTestCase {
             lowPower: false
         )
         XCTAssertNil(withinCadence, "2 hours since the last collection is under a 4-hour cadence")
+
+        let pastCadence = await RefreshCoordinator(staleInterval: 14_400, requiredDayCount: 185).request(
+            trigger: .timer,
+            scope: .all,
+            targets: [RefreshTarget(
+                workspace: workspace,
+                generatedAt: now.addingTimeInterval(-14_401),
+                dayCount: 60
+            )],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertEqual(pastCadence?.map(\.workspace), [workspace], "past a 4-hour cadence, the short branch fires")
     }
 
     private func workspace(_ name: String) throws -> Workspace {

@@ -56,7 +56,7 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 
 **Scheduling.**
 - One collector process runs at a time. A launch, timer, or wake trigger arriving during a run is dropped, not queued.
-- Unattended triggers (launch, timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than the refresh cadence (default 1 hour, configurable in Settings), then ones whose last attempt failed. A workspace too short to ever fill its history window is recollected at most once per hour regardless of a lower configured cadence. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
+- Unattended triggers (launch, timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than the refresh cadence (default 1 hour, configurable in Settings), then ones whose last attempt failed. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
 - Manual refresh in All Workspaces runs every tracked workspace sequentially, showing the active workspace and `N of M` progress. A failure is recorded on that workspace and the sweep continues. Cancelling stops the active collector and drops the rest of the queue. A restart also drops it and never resumes a manual sweep on its own.
 - A first collection (no report, or too little history) is attended, cancellable, and has no timeout. Routine refreshes time out after 120 seconds. Cancellation and timeout kill the collector's process group and leave the previous report untouched.
 
@@ -126,10 +126,7 @@ three values, persisted via `UserDefaults`:
   cadence.
 
 Any Save that changes a setting triggers an immediate refresh across
-every tracked workspace. A workspace whose Git history is younger
-than the configured window is recollected at most once per hour,
-regardless of a lower configured cadence — a permanently short
-workspace does not become more expensive just because cadence dropped.
+every tracked workspace.
 
 ## Errors and empty states
 
