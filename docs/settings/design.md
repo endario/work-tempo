@@ -13,7 +13,7 @@ parameters in several places, with no persistence and no UI:
 | --- | --- | --- |
 | History window (collected + charted) | 184/185 days | `HistoryWindow.chartClosedDays`/`.collectorDays` (`PortfolioMomentum.swift`), consumed by `CollectorClient`, `DashboardSnapshot`, `PortfolioMomentum` |
 | Headline rolling window | 30 days | Hardcoded in `MomentumSummary.swift:82`; duplicated as a UI fallback default in `DashboardSnapshot.swift:85,178`, **and as the aggregate gate/slice in `PortfolioMomentum.build` (`.swift:237,239`)** |
-| Refresh cadence / staleness threshold | 3,600s | `AppModel`'s timer loop (poll interval); independently re-defaulted as `staleInterval` in `RefreshCoordinator.init` and in both `DashboardSnapshot` initializers |
+| Refresh cadence / staleness threshold | 3,600s | `AppModel`'s timer loop (poll interval); independently re-defaulted as `staleInterval` in `RefreshCoordinator.init` |
 
 The aggregate (All Workspaces) staleness threshold (86,400s, `DashboardSnapshot.swift:152`),
 the routine-refresh timeout, and collector worker count are explicitly kept

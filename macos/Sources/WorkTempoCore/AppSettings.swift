@@ -12,7 +12,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     public static let `default` = AppSettings(
-        historyDays: 184,
+        historyDays: 184, // Six consecutive calendar months can span 184 days (March through August).
         headlineWindowDays: 30,
         refreshCadenceSeconds: 3_600
     )
