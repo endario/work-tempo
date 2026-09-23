@@ -41,12 +41,16 @@ public actor RefreshCoordinator {
     private let requiredDayCount: Int
     private var isRefreshing = false
 
-    public init(
-        staleInterval: TimeInterval = 3_600,
-        requiredDayCount: Int = HistoryWindow.collectorDays
-    ) {
+    public init(staleInterval: TimeInterval, requiredDayCount: Int) {
         self.staleInterval = staleInterval
         self.requiredDayCount = requiredDayCount
+    }
+
+    public init(settings: AppSettings) {
+        self.init(
+            staleInterval: TimeInterval(settings.refreshCadenceSeconds),
+            requiredDayCount: HistoryWindow(historyDays: settings.historyDays).collectorDays
+        )
     }
 
     public func request(
