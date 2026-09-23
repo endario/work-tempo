@@ -95,5 +95,10 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 360)
+        .onAppear {
+            historyDays = model.settings.historyDays
+            headlineWindowDays = model.settings.headlineWindowDays
+            refreshCadenceSeconds = model.settings.refreshCadenceSeconds
+        }
     }
 }
