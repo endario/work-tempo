@@ -22,7 +22,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         )
 
         XCTAssertEqual(plans?.map(\.workspace), [first, second])
-        XCTAssertEqual(plans?.map(\.timeout), [nil, .seconds(120)])
+        XCTAssertEqual(plans?.map(\.timeout), [nil, .seconds(300)])
         let duplicate = await coordinator.request(
             trigger: .manual,
             scope: .all,
@@ -80,7 +80,7 @@ final class RefreshCoordinatorTests: XCTestCase {
             lowPower: false
         )
         XCTAssertEqual(plans?.map(\.workspace), [first])
-        XCTAssertEqual(plans?.first?.timeout, .seconds(120))
+        XCTAssertEqual(plans?.first?.timeout, .seconds(300))
     }
 
     func testIndividualScopeAndLowPowerRemainBounded() async throws {

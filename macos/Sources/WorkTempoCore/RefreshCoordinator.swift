@@ -88,7 +88,7 @@ public actor RefreshCoordinator {
                 workspace: target.workspace,
                 timeout: target.generatedAt == nil || target.dayCount < requiredDayCount
                     ? nil
-                    : .seconds(120)
+                    : .seconds(300)
             )
         }
     }
