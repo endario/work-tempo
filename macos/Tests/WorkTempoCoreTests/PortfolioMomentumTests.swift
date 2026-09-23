@@ -202,6 +202,30 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(months[1].currentProgress), 1.5 / 31, accuracy: 0.000_001)
     }
 
+    func testMonthlyChurnCountScalesWithHistoryWindowInsteadOfCappingAtSixMonths() throws {
+        let target = try workspace("wide")
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [target],
+            reports: [target: try report(root: target.root.path, days: 366)],
+            historyWindow: HistoryWindow(historyDays: 365),
+            windowDays: 30
+        ).get()
+
+        XCTAssertEqual(portfolio.chart?.monthlyChurn.count, 12)
+    }
+
+    func testMonthlyChurnFloorKeepsAPartialPreviousMonthVisibleOnAShortWindow() throws {
+        let target = try workspace("narrow")
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [target],
+            reports: [target: try report(root: target.root.path, days: 32)],
+            historyWindow: HistoryWindow(historyDays: 31),
+            windowDays: 30
+        ).get()
+
+        XCTAssertEqual(portfolio.chart?.monthlyChurn.count, 2)
+    }
+
     // The open day is drawn short of its slot, so an x coordinate that rounds to
     // the previous whole index must still resolve to the open day.
     func testNearestPointIndexPicksTheOpenDayDrawnShortOfItsSlot() throws {

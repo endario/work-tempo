@@ -106,7 +106,11 @@ public extension ChartTimeline {
             accumulators[last].docDeleted += docDeleted[index]
         }
 
-        var result = Array(accumulators.suffix(6)).map { item in
+        // The default 184 closed days gives 6 whole months, dropping the partial
+        // oldest month; the floor of 2 keeps a short window's partial previous
+        // month visible.
+        let monthCount = max(2, Int((Double(closedDayCount) / 30.44).rounded()))
+        var result = Array(accumulators.suffix(monthCount)).map { item in
             MonthlyChurnPoint(
                 label: item.label,
                 codeAdded: item.codeAdded,
