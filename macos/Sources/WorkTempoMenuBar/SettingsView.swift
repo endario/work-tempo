@@ -20,6 +20,17 @@ struct SettingsView: View {
         Self.headlineWindowOptions.filter { $0 <= historyDays }
     }
 
+    private var refreshCadenceLabel: String {
+        switch refreshCadenceSeconds {
+        case 900: "15 minutes"
+        case 1_800: "30 minutes"
+        case 3_600: "1 hour"
+        case 7_200: "2 hours"
+        case 14_400: "4 hours"
+        default: "\(refreshCadenceSeconds / 60) minutes"
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -60,7 +71,7 @@ struct SettingsView: View {
                     Text("2 hours").tag(7_200)
                     Text("4 hours").tag(14_400)
                 }
-                Text("Checks about every N in the background — Work Tempo also refreshes on launch and when your Mac wakes.")
+                Text("Checks about every \(refreshCadenceLabel) in the background — Work Tempo also refreshes on launch and when your Mac wakes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
