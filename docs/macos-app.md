@@ -45,16 +45,18 @@ In memory the scope is a `DisplayScope` enum, `all` or `workspace(Workspace)`. R
 For a workspace the app runs:
 
 ```text
-work-tempo --root <root> --period day --days 185 --workers 2 --no-html --json <report-path>
+work-tempo --root <root> --period day --days 366 --workers 2 --no-html --json <report-path>
 ```
+
+`--days` is `historyDays + 1` from the user's configured history window (default 365, so 366), not a fixed constant.
 
 The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then the inherited `PATH`; fixed user locations win over an ambient GUI `PATH`. Collection never runs on the main actor, and stdout/stderr are bounded in memory.
 
-185 daily labels cover six calendar months (at most 184 closed days plus the open day), even when workspaces were last collected on different days.
+366 daily labels cover twelve calendar months (at most 365 closed days plus the open day) at the default history window; the actual count follows the configured History setting, even when workspaces were last collected on different days.
 
 **Scheduling.**
-- One collector process runs at a time. A launch, hourly, or wake trigger arriving during a run is dropped, not queued.
-- Unattended triggers (launch, hourly timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than an hour, then ones whose last attempt failed. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
+- One collector process runs at a time. A launch, timer, or wake trigger arriving during a run is dropped, not queued.
+- Unattended triggers (launch, timer, system wake) refresh one workspace per trigger: first any with no report, then any with too little history, then the stalest one older than the refresh cadence (default 1 hour, configurable in Settings), then ones whose last attempt failed. Unattended refresh is skipped in Low Power Mode. Manual refresh is always available.
 - Manual refresh in All Workspaces runs every tracked workspace sequentially, showing the active workspace and `N of M` progress. A failure is recorded on that workspace and the sweep continues. Cancelling stops the active collector and drops the rest of the queue. A restart also drops it and never resumes a manual sweep on its own.
 - A first collection (no report, or too little history) is attended, cancellable, and has no timeout. Routine refreshes time out after 120 seconds. Cancellation and timeout kill the collector's process group and leave the previous report untouched.
 
@@ -70,7 +72,7 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 daily churn = (source additions + source deletions over the window) / days in window
 ```
 
-The window is the trailing closed days, up to 30, starting no earlier than the first day the workspace had source or churn. Documentation churn and the current partial day are excluded. The second hero metric is net source LOC growth (additions minus deletions) over the same window. Both show their definitions in a tooltip.
+The window is the trailing closed days — 30 by default, configurable in Settings and never more than the configured history window — starting no earlier than the first day the workspace had source or churn. Documentation churn and the current partial day are excluded. The second hero metric is net source LOC growth (additions minus deletions) over the same window. Both show their definitions in a tooltip.
 
 The menu-bar item shows the same daily churn, compact, with a `/d` suffix (for example `12.3K/d`). It shows `--` before any report exists, a spinner glyph while refreshing, and a warning marker when data is stale or a refresh failed.
 
@@ -85,7 +87,7 @@ Two guards refuse to sum rather than produce a wrong number:
 - **Overlap.** If the same resolved repository path appears in two workspaces' `scope.repositories`, aggregation is refused and both workspaces and the path are named. Reports carry workspace-level series, so shared history cannot be deduplicated after the fact.
 - **Timezone.** All contributors must have been collected under the same timezone; matching date strings from different day boundaries are never summed.
 
-**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. The headline uses up to 30 labels ending there; charts use the trailing 184 closed labels, plus the open day only when every contributor has it. If the cohort lacks 30 common closed labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
+**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. The headline uses up to 30 labels ending there; charts use the trailing 365 closed labels, plus the open day only when every contributor has it. If the cohort lacks 30 common closed labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
 
 **Summed series.** Source LOC (code and tests), documentation LOC, code and test additions and deletions, and documentation churn.
 
@@ -100,11 +102,31 @@ A 430-point popover with a fixed header and footer:
 1. Header: scope menu (All Workspaces and each workspace), last refresh, refresh, and add-workspace.
 2. Hero: churn per day and net source LOC, each with a sparkline. The open day appears as a faded trailing segment marked to-date.
 3. Metric columns: source, code, tests, docs.
-4. **Source LOC** chart: day-end code and test lines stacked above the axis across six months, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
+4. **Source LOC** chart: day-end code and test lines stacked above the axis across twelve months, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
 5. **Monthly Churn** chart: the same six series by calendar month. The current month keeps its full slot but fills only the elapsed fraction.
 6. Footer: remove the selected workspace, quit.
 
 Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Hue names the kind (blue code, amber tests, gray docs) and lightness names the direction (additions vs deletions); each step clears 3:1 contrast against its background. The Dock icon is suppressed with `LSUIElement`.
+
+## Settings
+
+A native Settings window (gear icon in the popover header) configures
+three values, persisted via `UserDefaults`:
+
+- **History** — how far back the collector fetches and the charts
+  display. Default 12 months (365 days).
+- **Headline window** — the rolling window behind the churn/day and net
+  growth hero metrics. Default 30 days, never more than the configured
+  history window.
+- **Refresh cadence** — how often the app checks for background
+  refreshes, and how old a report can get before it's flagged stale in
+  a single-workspace view. Default 1 hour. All Workspaces keeps a
+  fixed 24-hour staleness threshold regardless of cadence. The app
+  also refreshes on launch and when the Mac wakes, independent of this
+  cadence.
+
+Any Save that changes a setting triggers an immediate refresh across
+every tracked workspace.
 
 ## Errors and empty states
 
