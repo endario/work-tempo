@@ -104,7 +104,6 @@ final class AppModel: ObservableObject {
     func applySettings(_ newSettings: AppSettings) {
         settings = newSettings
         settings.save()
-        timerTask?.cancel()
         startTimer()
         coordinator = RefreshCoordinator(settings: newSettings)
         Task { await cancelActiveRefresh(); requestRefresh(.manual, scopeOverride: .all) }
@@ -141,6 +140,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startTimer() {
+        timerTask?.cancel()
         let cadence = settings.refreshCadenceSeconds
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
