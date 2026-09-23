@@ -31,7 +31,8 @@ final class CollectorClientTests: XCTestCase {
         let report = try await client.collect(CollectorRequest(
             workspace: workspace,
             reportURL: reportURL,
-            timeout: .seconds(5)
+            timeout: .seconds(5),
+            collectorDays: 185
         ))
 
         XCTAssertEqual(report.workspace.title, "Fixture")
@@ -56,7 +57,8 @@ final class CollectorClientTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
             workspace: missing,
             reportURL: base.appending(path: "missing.json"),
-            timeout: .seconds(1)
+            timeout: .seconds(1),
+            collectorDays: 185
         ))) { error in
             XCTAssertEqual(error as? CollectorError, .missingWorkspace(missing.root.path))
         }
@@ -68,7 +70,8 @@ final class CollectorClientTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
             workspace: nested,
             reportURL: base.appending(path: "nested.json"),
-            timeout: .seconds(1)
+            timeout: .seconds(1),
+            collectorDays: 185
         ))) { error in
             XCTAssertEqual(error as? CollectorError, .notRepositoryRoot(nested.root.path))
         }
@@ -90,7 +93,8 @@ final class CollectorClientTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
             workspace: workspace,
             reportURL: fixture.base.appending(path: "report.json"),
-            timeout: .seconds(5)
+            timeout: .seconds(5),
+            collectorDays: 185
         ))) { error in
             XCTAssertEqual(error as? CollectorError, .collectorFailed("final diagnostic"))
         }
@@ -127,7 +131,8 @@ final class CollectorClientTests: XCTestCase {
         _ = try await client.collect(CollectorRequest(
             workspace: try Workspace(root: fixture.root),
             reportURL: fixture.base.appending(path: "report.json"),
-            timeout: .seconds(5)
+            timeout: .seconds(5),
+            collectorDays: 185
         ))
     }
 
@@ -152,7 +157,8 @@ final class CollectorClientTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
             workspace: workspace,
             reportURL: fixture.base.appending(path: "report.json"),
-            timeout: .seconds(1)
+            timeout: .seconds(1),
+            collectorDays: 185
         ))) { error in
             XCTAssertEqual(error as? CollectorError, .timedOut)
         }
@@ -193,7 +199,8 @@ final class CollectorClientTests: XCTestCase {
             try await client.collect(CollectorRequest(
                 workspace: workspace,
                 reportURL: fixture.base.appending(path: "report.json"),
-                timeout: timeout
+                timeout: timeout,
+                collectorDays: 185
             ))
         }
 

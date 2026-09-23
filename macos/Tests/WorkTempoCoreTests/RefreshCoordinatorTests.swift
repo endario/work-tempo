@@ -4,7 +4,7 @@ import XCTest
 
 final class RefreshCoordinatorTests: XCTestCase {
     func testManualAggregateQueuesEveryWorkspaceSequentially() async throws {
-        let coordinator = RefreshCoordinator()
+        let coordinator = RefreshCoordinator(settings: .default)
         let first = try workspace("first")
         let second = try workspace("second")
         let now = Date(timeIntervalSince1970: 10_000)
@@ -39,7 +39,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         let second = try workspace("second")
         let third = try workspace("third")
 
-        var coordinator = RefreshCoordinator()
+        var coordinator = RefreshCoordinator(settings: .default)
         var plans = await coordinator.request(
             trigger: .launch,
             scope: .all,
@@ -54,7 +54,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(plans?.map(\.workspace), [second])
         XCTAssertNil(plans?.first?.timeout)
 
-        coordinator = RefreshCoordinator()
+        coordinator = RefreshCoordinator(settings: .default)
         plans = await coordinator.request(
             trigger: .timer,
             scope: .all,
@@ -68,7 +68,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(plans?.map(\.workspace), [third])
         XCTAssertNil(plans?.first?.timeout)
 
-        coordinator = RefreshCoordinator()
+        coordinator = RefreshCoordinator(settings: .default)
         plans = await coordinator.request(
             trigger: .wake,
             scope: .all,
@@ -84,7 +84,7 @@ final class RefreshCoordinatorTests: XCTestCase {
     }
 
     func testIndividualScopeAndLowPowerRemainBounded() async throws {
-        let coordinator = RefreshCoordinator()
+        let coordinator = RefreshCoordinator(settings: .default)
         let first = try workspace("first")
         let second = try workspace("second")
         let now = Date(timeIntervalSince1970: 20_000)
@@ -113,7 +113,7 @@ final class RefreshCoordinatorTests: XCTestCase {
     }
 
     func testFreshUnattendedTargetsDoNotStartFlight() async throws {
-        let coordinator = RefreshCoordinator()
+        let coordinator = RefreshCoordinator(settings: .default)
         let now = Date(timeIntervalSince1970: 20_000)
         let target = RefreshTarget(
             workspace: try workspace("fresh"),
@@ -143,7 +143,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 20_000)
         let failed = try workspace("failed")
         let stale = try workspace("stale")
-        var coordinator = RefreshCoordinator()
+        var coordinator = RefreshCoordinator(settings: .default)
 
         var plans = await coordinator.request(
             trigger: .timer,
@@ -166,7 +166,7 @@ final class RefreshCoordinatorTests: XCTestCase {
         )
         XCTAssertEqual(plans?.map(\.workspace), [stale])
 
-        coordinator = RefreshCoordinator()
+        coordinator = RefreshCoordinator(settings: .default)
         plans = await coordinator.request(
             trigger: .timer,
             scope: .all,

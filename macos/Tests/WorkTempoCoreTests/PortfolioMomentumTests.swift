@@ -31,7 +31,12 @@ final class PortfolioMomentumTests: XCTestCase {
             ),
         ]
 
-        let portfolio = try PortfolioMomentum.build(workspaces: [first, second], reports: reports).get()
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: reports,
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
 
         XCTAssertEqual(portfolio.contributorCount, 2)
         XCTAssertEqual(portfolio.trackedCount, 2)
@@ -58,7 +63,9 @@ final class PortfolioMomentumTests: XCTestCase {
         let second = try workspace("second")
         let portfolio = try PortfolioMomentum.build(
             workspaces: [first, second],
-            reports: [first: try report(root: first.root.path)]
+            reports: [first: try report(root: first.root.path)],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
 
         XCTAssertEqual(portfolio.contributorCount, 1)
@@ -74,7 +81,7 @@ final class PortfolioMomentumTests: XCTestCase {
         let overlap = PortfolioMomentum.build(workspaces: [first, second], reports: [
             first: try report(root: first.root.path, repositories: [first.root.path, shared]),
             second: try report(root: second.root.path, repositories: [second.root.path, shared]),
-        ])
+        ], historyWindow: HistoryWindow(historyDays: 184), windowDays: 30)
         XCTAssertEqual(
             failure(overlap),
             .overlappingRepository(
@@ -87,7 +94,7 @@ final class PortfolioMomentumTests: XCTestCase {
         let mixed = PortfolioMomentum.build(workspaces: [first, second], reports: [
             first: try report(root: first.root.path, timezone: "+08 (+08:00)"),
             second: try report(root: second.root.path, timezone: "UTC (+00:00)"),
-        ])
+        ], historyWindow: HistoryWindow(historyDays: 184), windowDays: 30)
         XCTAssertEqual(failure(mixed), .mixedTimezones(["+08 (+08:00)", "UTC (+00:00)"]))
     }
 
@@ -99,7 +106,7 @@ final class PortfolioMomentumTests: XCTestCase {
         let result = PortfolioMomentum.build(workspaces: [first, second], reports: [
             first: try report(root: first.root.path, repositories: [first.root.path, shared]),
             second: try report(root: second.root.path, repositories: [second.root.path, shared]),
-        ])
+        ], historyWindow: HistoryWindow(historyDays: 184), windowDays: 30)
 
         XCTAssertEqual(
             failure(result),
@@ -117,7 +124,7 @@ final class PortfolioMomentumTests: XCTestCase {
         let portfolio = try PortfolioMomentum.build(workspaces: [first, second], reports: [
             first: try report(root: first.root.path, days: 185),
             second: try report(root: second.root.path, days: 61),
-        ]).get()
+        ], historyWindow: HistoryWindow(historyDays: 184), windowDays: 30).get()
 
         XCTAssertEqual(portfolio.momentum?.summary.dailyChurn, 4)
         XCTAssertEqual(portfolio.chart?.closedDayCount, 60)
@@ -260,7 +267,9 @@ final class PortfolioMomentumTests: XCTestCase {
 
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],
-            reports: [workspace: report]
+            reports: [workspace: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
         let summary = try XCTUnwrap(portfolio.momentum?.summary)
 
