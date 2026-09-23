@@ -55,7 +55,9 @@ public struct DashboardSnapshot: Equatable, Sendable {
         report: ReportDocument?,
         refreshState: SnapshotRefreshState,
         now: Date,
-        staleInterval: TimeInterval = 3_600
+        staleInterval: TimeInterval,
+        maxWindowDays: Int,
+        historyWindow: HistoryWindow
     ) {
         workspaceName = report?.workspace.title ?? workspace?.displayName ?? "No workspace"
         workspacePath = workspace?.root.path
@@ -82,14 +84,14 @@ public struct DashboardSnapshot: Equatable, Sendable {
             recentDeleted = []
             chartTimeline = nil
             openDay = nil
-            windowDays = 30
+            windowDays = maxWindowDays
             historyMessage = nil
             let status = isRefreshing ? ", refreshing" : ""
             menuAccessibilityLabel = "Work Tempo, \(workspaceName), no report yet\(status)"
             return
         }
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: maxWindowDays)
         let stale = reportGeneratedAt.map { now.timeIntervalSince($0) > staleInterval } ?? true
         if errorMessage != nil {
             dataState = .failedWithCache
@@ -115,11 +117,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentAdded = summary.recentAdded
         recentDeleted = summary.recentDeleted
         windowDays = summary.windowDays
-        let timeline = PortfolioMomentum.chart(for: report)
+        let timeline = PortfolioMomentum.chart(for: report, historyWindow: historyWindow)
         chartTimeline = timeline
         openDay = timeline?.openDay
         historyMessage = chartTimeline == nil
-            ? "Extending history to \(HistoryWindow.chartClosedDays) days"
+            ? "Extending history to \(historyWindow.chartClosedDays) days"
             : nil
 
         var menuStatus = ""
@@ -134,7 +136,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public init(
         portfolio: PortfolioMomentum,
         refreshState: SnapshotRefreshState,
-        now: Date
+        now: Date,
+        maxWindowDays: Int
     ) {
         workspaceName = "All Workspaces"
         workspacePath = nil
@@ -175,7 +178,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentLabels = summary?.recentLabels ?? []
         recentAdded = summary?.recentAdded ?? []
         recentDeleted = summary?.recentDeleted ?? []
-        windowDays = summary?.windowDays ?? 30
+        windowDays = summary?.windowDays ?? maxWindowDays
         chartTimeline = portfolio.chart
         openDay = portfolio.chart?.openDay
         if case let .extending(current, required) = portfolio.historyState {

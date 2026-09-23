@@ -1,9 +1,13 @@
 import Foundation
 
-public enum HistoryWindow {
-    // Six consecutive calendar months can span 184 days (March through August).
-    public static let chartClosedDays = 184
-    public static let collectorDays = chartClosedDays + 1
+public struct HistoryWindow: Sendable {
+    public let chartClosedDays: Int
+    public let collectorDays: Int
+
+    public init(historyDays: Int) {
+        chartClosedDays = historyDays
+        collectorDays = historyDays + 1
+    }
 }
 
 public enum PortfolioError: Error, Equatable, LocalizedError, Sendable {
@@ -184,7 +188,9 @@ public struct PortfolioMomentum: Equatable, Sendable {
 
     public static func build(
         workspaces: [Workspace],
-        reports: [Workspace: ReportDocument]
+        reports: [Workspace: ReportDocument],
+        historyWindow: HistoryWindow,
+        windowDays: Int
     ) -> Result<PortfolioMomentum, PortfolioError> {
         let contributors = workspaces.compactMap { workspace in
             reports[workspace].map { (workspace, $0) }
@@ -229,20 +235,23 @@ public struct PortfolioMomentum: Equatable, Sendable {
                 warning: warning,
                 momentum: nil,
                 chart: nil,
-                historyState: .extending(current: 0, required: HistoryWindow.chartClosedDays)
+                historyState: .extending(current: 0, required: historyWindow.chartClosedDays)
             ))
         }
 
         let commonClosed = commonClosedLabels(contributors.map(\.1))
-        let momentumLabels = Array(commonClosed.suffix(min(30, commonClosed.count)))
+        let momentumLabels = Array(commonClosed.suffix(min(windowDays, commonClosed.count)))
         let momentumInput = makeMomentumInput(reports: contributors.map(\.1), labels: momentumLabels)
-        let aligned = momentumLabels.count >= 30
-            ? AlignedMomentum(input: momentumInput, summary: MomentumSummary(input: momentumInput))
+        let aligned = momentumLabels.count >= windowDays
+            ? AlignedMomentum(
+                input: momentumInput,
+                summary: MomentumSummary(input: momentumInput, maxWindowDays: windowDays)
+            )
             : nil
         let chart = commonClosed.count >= 2
             ? makeChart(
                 reports: contributors.map(\.1),
-                closedLabels: Array(commonClosed.suffix(min(HistoryWindow.chartClosedDays, commonClosed.count)))
+                closedLabels: Array(commonClosed.suffix(min(historyWindow.chartClosedDays, commonClosed.count)))
             )
             : nil
 
@@ -255,18 +264,18 @@ public struct PortfolioMomentum: Equatable, Sendable {
             warning: warning,
             momentum: aligned,
             chart: chart,
-            historyState: commonClosed.count >= HistoryWindow.chartClosedDays
+            historyState: commonClosed.count >= historyWindow.chartClosedDays
                 ? .ready
-                : .extending(current: commonClosed.count, required: HistoryWindow.chartClosedDays)
+                : .extending(current: commonClosed.count, required: historyWindow.chartClosedDays)
         ))
     }
 
-    public static func chart(for report: ReportDocument) -> ChartTimeline? {
+    public static func chart(for report: ReportDocument, historyWindow: HistoryWindow) -> ChartTimeline? {
         let closed = closedLabels(report)
         guard closed.count >= 2 else { return nil }
         return makeChart(
             reports: [report],
-            closedLabels: Array(closed.suffix(min(HistoryWindow.chartClosedDays, closed.count)))
+            closedLabels: Array(closed.suffix(min(historyWindow.chartClosedDays, closed.count)))
         )
     }
 

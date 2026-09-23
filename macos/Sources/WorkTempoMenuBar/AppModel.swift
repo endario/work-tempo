@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
     private let controller: WorkspaceController
     private let coordinator: RefreshCoordinator
     private let resolver: CollectorResolver
+    private let settings: AppSettings = .default
     private var refreshTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
     private var wakeObserver: AnyCancellable?
@@ -23,14 +24,22 @@ final class AppModel: ObservableObject {
 
     init(
         store: WorkspaceStore = WorkspaceStore(),
-        coordinator: RefreshCoordinator = RefreshCoordinator(),
+        coordinator: RefreshCoordinator = RefreshCoordinator(settings: .default),
         resolver: CollectorResolver = CollectorResolver()
     ) {
         self.store = store
         controller = WorkspaceController(store: store)
         self.coordinator = coordinator
         self.resolver = resolver
-        snapshot = DashboardSnapshot(workspace: nil, report: nil, refreshState: .idle, now: Date())
+        snapshot = DashboardSnapshot(
+            workspace: nil,
+            report: nil,
+            refreshState: .idle,
+            now: Date(),
+            staleInterval: TimeInterval(settings.refreshCadenceSeconds),
+            maxWindowDays: settings.headlineWindowDays,
+            historyWindow: HistoryWindow(historyDays: settings.historyDays)
+        )
         Task { [weak self] in await self?.start() }
     }
 
@@ -170,7 +179,8 @@ final class AppModel: ObservableObject {
                     let report = try await CollectorClient(executable: executable).collect(CollectorRequest(
                         workspace: plan.workspace,
                         reportURL: store.reportURL(for: plan.workspace),
-                        timeout: plan.timeout
+                        timeout: plan.timeout,
+                        collectorDays: historyWindow.collectorDays
                     ))
                     apply(await controller.succeedRefresh(ticket, workspace: plan.workspace, report: report))
                 } catch CollectorError.cancelled {
@@ -209,20 +219,26 @@ final class AppModel: ObservableObject {
             let refreshState = aggregateRefreshState(state)
             switch PortfolioMomentum.build(
                 workspaces: state.workspaces,
-                reports: state.reportsByWorkspace
+                reports: state.reportsByWorkspace,
+                historyWindow: historyWindow,
+                windowDays: settings.headlineWindowDays
             ) {
             case let .success(portfolio):
                 snapshot = DashboardSnapshot(
                     portfolio: portfolio,
                     refreshState: refreshState,
-                    now: Date()
+                    now: Date(),
+                    maxWindowDays: settings.headlineWindowDays
                 )
             case let .failure(error):
                 snapshot = DashboardSnapshot(
                     workspace: nil,
                     report: nil,
                     refreshState: .failed(error.localizedDescription),
-                    now: Date()
+                    now: Date(),
+                    staleInterval: TimeInterval(settings.refreshCadenceSeconds),
+                    maxWindowDays: settings.headlineWindowDays,
+                    historyWindow: historyWindow
                 )
             }
         case let .workspace(workspace):
@@ -230,9 +246,16 @@ final class AppModel: ObservableObject {
                 workspace: workspace,
                 report: state.report(for: workspace),
                 refreshState: state.refreshState(for: workspace),
-                now: Date()
+                now: Date(),
+                staleInterval: TimeInterval(settings.refreshCadenceSeconds),
+                maxWindowDays: settings.headlineWindowDays,
+                historyWindow: historyWindow
             )
         }
+    }
+
+    private var historyWindow: HistoryWindow {
+        HistoryWindow(historyDays: settings.historyDays)
     }
 
     private func aggregateRefreshState(_ state: WorkspaceControllerState) -> SnapshotRefreshState {
@@ -252,7 +275,10 @@ final class AppModel: ObservableObject {
             workspace: selectedWorkspace,
             report: selectedReport,
             refreshState: .failed(message),
-            now: Date()
+            now: Date(),
+            staleInterval: TimeInterval(settings.refreshCadenceSeconds),
+            maxWindowDays: settings.headlineWindowDays,
+            historyWindow: historyWindow
         )
     }
 

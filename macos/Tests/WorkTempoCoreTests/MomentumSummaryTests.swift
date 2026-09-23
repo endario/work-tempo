@@ -11,7 +11,7 @@ final class MomentumSummaryTests: XCTestCase {
             deleted: Array(repeating: 0, count: 30) + Array(repeating: 4, count: 30) + [99_999]
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.currentChurn, 300)
         XCTAssertEqual(summary.dailyChurn, 10, accuracy: 0.000_001)
@@ -31,7 +31,7 @@ final class MomentumSummaryTests: XCTestCase {
             churn: Array(repeating: 1, count: 61)
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.recentLabels.count, summary.recentChurn.count)
         XCTAssertEqual(summary.recentLabels.last, "2026-08-30")
@@ -50,7 +50,7 @@ final class MomentumSummaryTests: XCTestCase {
             deleted: deleted + [99_999]
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.recentAdded, Array(30..<60))
         XCTAssertEqual(summary.recentDeleted, (30..<60).map { 100 + $0 })
@@ -67,7 +67,7 @@ final class MomentumSummaryTests: XCTestCase {
             deleted: idle + Array(repeating: 8, count: 5) + [99_999]
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.windowDays, 5)
         XCTAssertEqual(summary.currentChurn, 100)
@@ -86,7 +86,7 @@ final class MomentumSummaryTests: XCTestCase {
             deleted: idle + [10, 0] + [99_999]
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.windowDays, 2)
         XCTAssertEqual(summary.currentChurn, 30)
@@ -99,7 +99,7 @@ final class MomentumSummaryTests: XCTestCase {
             churn: Array(repeating: 1, count: 60) + [50_000]
         ))
 
-        let summary = MomentumSummary(report: report)
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
 
         XCTAssertEqual(summary.currentChurn, 30)
         XCTAssertEqual(summary.dailyChurn, 1)

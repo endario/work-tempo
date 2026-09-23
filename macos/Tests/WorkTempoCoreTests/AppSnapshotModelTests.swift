@@ -9,7 +9,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: workspace,
             report: nil,
             refreshState: .idle,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
 
         XCTAssertEqual(snapshot.dataState, .empty)
@@ -22,7 +25,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: workspace,
             report: nil,
             refreshState: .refreshing,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
         XCTAssertFalse(refreshing.hasMomentum)
     }
@@ -31,13 +37,16 @@ final class AppSnapshotModelTests: XCTestCase {
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],
-            reports: [:]
+            reports: [:],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
 
         let snapshot = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .idle,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            maxWindowDays: 30
         )
 
         XCTAssertEqual(snapshot.dataState, .empty)
@@ -57,7 +66,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
             report: report,
             refreshState: .idle,
-            now: try generatedAt(report).addingTimeInterval(300)
+            now: try generatedAt(report).addingTimeInterval(300),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
 
         XCTAssertEqual(snapshot.dataState, .ready)
@@ -78,7 +90,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: workspace,
             report: report,
             refreshState: .refreshing,
-            now: now
+            now: now,
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
         XCTAssertTrue(refreshing.isRefreshing)
         XCTAssertEqual(refreshing.dataState, .ready)
@@ -89,7 +104,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: workspace,
             report: report,
             refreshState: .failed("collector unavailable"),
-            now: now
+            now: now,
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
         XCTAssertEqual(failed.dataState, .failedWithCache)
         XCTAssertEqual(failed.errorMessage, "collector unavailable")
@@ -102,7 +120,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
             report: report,
             refreshState: .idle,
-            now: try generatedAt(report).addingTimeInterval(3_601)
+            now: try generatedAt(report).addingTimeInterval(3_601),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
 
         XCTAssertEqual(snapshot.dataState, .stale)
@@ -120,7 +141,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
             report: report,
             refreshState: .idle,
-            now: generatedAt.addingTimeInterval(60)
+            now: generatedAt.addingTimeInterval(60),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
 
         XCTAssertEqual(snapshot.dataState, .ready)
@@ -135,13 +159,16 @@ final class AppSnapshotModelTests: XCTestCase {
         ))
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],
-            reports: [workspace: report]
+            reports: [workspace: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
 
         let snapshot = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .idle,
-            now: try generatedAt(report)
+            now: try generatedAt(report),
+            maxWindowDays: 30
         )
 
         XCTAssertEqual(snapshot.workspaceName, "All Workspaces")
@@ -160,7 +187,10 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
             report: report,
             refreshState: .idle,
-            now: try generatedAt(report)
+            now: try generatedAt(report),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
 
         XCTAssertTrue(snapshot.hasMomentum)
@@ -175,13 +205,16 @@ final class AppSnapshotModelTests: XCTestCase {
         let report = try self.report(currentChurn: 30, previousChurn: 0)
         let portfolio = try PortfolioMomentum.build(
             workspaces: [first, second],
-            reports: [first: report]
+            reports: [first: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
 
         let snapshot = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .idle,
-            now: try generatedAt(report)
+            now: try generatedAt(report),
+            maxWindowDays: 30
         )
 
         XCTAssertNil(snapshot.errorMessage)
@@ -236,18 +269,24 @@ final class AppSnapshotModelTests: XCTestCase {
             workspace: workspace,
             report: report,
             refreshState: .idle,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
         )
         XCTAssertEqual(individual.openDay, expected)
 
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],
-            reports: [workspace: report]
+            reports: [workspace: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
         let aggregate = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .idle,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            maxWindowDays: 30
         )
         XCTAssertEqual(aggregate.openDay, expected)
     }
@@ -259,13 +298,16 @@ final class AppSnapshotModelTests: XCTestCase {
         ))
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],
-            reports: [workspace: report]
+            reports: [workspace: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
         ).get()
 
         let snapshot = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .idle,
-            now: Date(timeIntervalSince1970: 0)
+            now: Date(timeIntervalSince1970: 0),
+            maxWindowDays: 30
         )
 
         XCTAssertEqual(snapshot.menuValue, "10/d")

@@ -5,11 +5,13 @@ public struct CollectorRequest: Sendable {
     public let workspace: Workspace
     public let reportURL: URL
     public let timeout: Duration?
+    public let collectorDays: Int
 
-    public init(workspace: Workspace, reportURL: URL, timeout: Duration?) {
+    public init(workspace: Workspace, reportURL: URL, timeout: Duration?, collectorDays: Int) {
         self.workspace = workspace
         self.reportURL = reportURL
         self.timeout = timeout
+        self.collectorDays = collectorDays
     }
 }
 
@@ -66,7 +68,7 @@ public actor CollectorClient {
         let arguments = [
             "--root", request.workspace.root.path,
             "--period", "day",
-            "--days", String(HistoryWindow.collectorDays),
+            "--days", String(request.collectorDays),
             "--workers", "2",
             "--no-html",
             "--json", request.reportURL.path,

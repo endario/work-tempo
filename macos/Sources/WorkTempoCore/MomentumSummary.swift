@@ -63,11 +63,11 @@ public struct MomentumSummary: Equatable, Sendable {
     public let recentDeleted: [Int]
     public let windowDays: Int
 
-    public init(report: ReportDocument) {
-        self.init(input: MomentumInput(report: report))
+    public init(report: ReportDocument, maxWindowDays: Int) {
+        self.init(input: MomentumInput(report: report), maxWindowDays: maxWindowDays)
     }
 
-    public init(input: MomentumInput) {
+    public init(input: MomentumInput, maxWindowDays: Int) {
         sourceLOC = input.loc.last ?? 0
         codeLOC = input.codeLoc.last ?? 0
         testLOC = input.testLoc.last ?? 0
@@ -79,7 +79,7 @@ public struct MomentumSummary: Equatable, Sendable {
         // Churn as well as lines: a first day that adds source and deletes it
         // again ends at zero LOC but is a day the workspace was worked on.
         let firstTrackedDay = (0..<closedEnd).first { input.loc[$0] > 0 || input.churn[$0] > 0 } ?? 0
-        let currentStart = max(firstTrackedDay, max(0, closedEnd - 30))
+        let currentStart = max(firstTrackedDay, max(0, closedEnd - maxWindowDays))
         windowDays = max(1, closedEnd - currentStart)
         recentChurn = Array(input.churn[currentStart..<closedEnd])
         recentLabels = Array(input.labels[currentStart..<closedEnd])
