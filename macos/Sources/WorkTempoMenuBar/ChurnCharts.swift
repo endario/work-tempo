@@ -18,7 +18,7 @@ enum TempoPalette {
     static let docsAdded = adaptive(light: 0x00875A, dark: 0x199E70)
     static let docsDeleted = adaptive(light: 0x006140, dark: 0x4DC392)
 
-    static let fillOpacity = 0.85
+    static let fillOpacity = 0.75
 
     static let positive = adaptive(light: 0x009300, dark: 0x0CA30C)
     static let negative = adaptive(light: 0xD03B3B, dark: 0xE5504D)
