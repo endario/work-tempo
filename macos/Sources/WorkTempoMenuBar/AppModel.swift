@@ -102,6 +102,7 @@ final class AppModel: ObservableObject {
     }
 
     func applySettings(_ newSettings: AppSettings) {
+        guard newSettings != settings else { return }
         settings = newSettings
         settings.save()
         startTimer()
