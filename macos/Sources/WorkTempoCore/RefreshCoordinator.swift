@@ -102,11 +102,28 @@ public actor RefreshCoordinator {
         if let missing = healthy.first(where: { $0.generatedAt == nil }) {
             return missing
         }
-        if let short = healthy.first(where: { $0.dayCount < requiredDayCount }) {
+        // A workspace that can never fill the window (dayCount < required)
+        // would otherwise be reselected unconditionally, forever. Floored at
+        // today's fixed hourly rate regardless of a lower configured
+        // cadence: a naive `>= staleInterval` gate has no effect on its own,
+        // since the timer already ticks at exactly that interval.
+        let shortFloor = max(staleInterval, 3_600)
+        if let short = healthy.first(where: { target in
+            target.dayCount < requiredDayCount
+                && (target.generatedAt.map { now.timeIntervalSince($0) >= shortFloor } ?? true)
+        }) {
             return short
         }
+        // Short targets are excluded here, not just gated by the floor
+        // above: this filter runs over every healthy target regardless of
+        // dayCount, so without this exclusion a short-but-old-enough-by-
+        // staleInterval-alone workspace would still be picked up through
+        // this branch — bypassing the floor entirely, since request()'s own
+        // timeout choice keys off dayCount < requiredDayCount independent of
+        // which branch made the selection.
         if let stale = healthy.filter({ target in
-                target.generatedAt.map { now.timeIntervalSince($0) >= staleInterval } ?? true
+                target.dayCount >= requiredDayCount
+                    && (target.generatedAt.map { now.timeIntervalSince($0) >= staleInterval } ?? true)
             }).min(by: { lhs, rhs in
                 (lhs.generatedAt ?? .distantPast) < (rhs.generatedAt ?? .distantPast)
             }) {

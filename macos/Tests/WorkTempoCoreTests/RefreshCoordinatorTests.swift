@@ -183,6 +183,63 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertNil(plans?.first?.timeout)
     }
 
+    func testShortHistoryBranchFloorsAtOneHourRegardlessOfLowerCadence() async throws {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let workspace = try workspace("young")
+        // A 15-minute cadence, with the workspace last collected 20 minutes
+        // ago: naive `>= staleInterval` (900s) would re-select it. The
+        // floor (max(900, 3_600) = 3_600) must not.
+        let coordinator = RefreshCoordinator(staleInterval: 900, requiredDayCount: 185)
+
+        let tooSoon = await coordinator.request(
+            trigger: .timer,
+            scope: .all,
+            targets: [RefreshTarget(
+                workspace: workspace,
+                generatedAt: now.addingTimeInterval(-1_200),
+                dayCount: 60
+            )],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertNil(tooSoon, "20 minutes since the last short collection is under the 1-hour floor")
+
+        let pastFloor = await RefreshCoordinator(staleInterval: 900, requiredDayCount: 185).request(
+            trigger: .timer,
+            scope: .all,
+            targets: [RefreshTarget(
+                workspace: workspace,
+                generatedAt: now.addingTimeInterval(-3_601),
+                dayCount: 60
+            )],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertEqual(pastFloor?.map(\.workspace), [workspace], "past the 1-hour floor, the short branch still fires")
+        XCTAssertNil(pastFloor?.first?.timeout, "the short branch stays untimed")
+    }
+
+    func testShortHistoryBranchUsesTheHigherCadenceWhenAboveTheFloor() async throws {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let workspace = try workspace("young")
+        // A 4-hour cadence: the floor formula is max(staleInterval, 3_600),
+        // so at a cadence above the floor, the configured cadence wins.
+        let coordinator = RefreshCoordinator(staleInterval: 14_400, requiredDayCount: 185)
+
+        let withinCadence = await coordinator.request(
+            trigger: .timer,
+            scope: .all,
+            targets: [RefreshTarget(
+                workspace: workspace,
+                generatedAt: now.addingTimeInterval(-7_200),
+                dayCount: 60
+            )],
+            now: now,
+            lowPower: false
+        )
+        XCTAssertNil(withinCadence, "2 hours since the last collection is under a 4-hour cadence")
+    }
+
     private func workspace(_ name: String) throws -> Workspace {
         try Workspace(root: URL(fileURLWithPath: "/tmp/\(name)"))
     }
