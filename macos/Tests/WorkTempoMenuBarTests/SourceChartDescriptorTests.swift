@@ -4,7 +4,7 @@ import XCTest
 @testable import WorkTempoMenuBar
 
 final class SourceChartDescriptorTests: XCTestCase {
-    func testDocumentationIsSpokenAsPositiveSeparateSeries() {
+    func testDocumentationIsPositiveSeparateSeries() {
         let descriptor = SourceChartDescriptor(timeline: timeline(docs: [5, 6, 7])).makeChartDescriptor()
 
         XCTAssertEqual(descriptor.title, "Source lines over time")
