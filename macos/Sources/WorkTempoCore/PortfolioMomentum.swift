@@ -224,9 +224,15 @@ public struct PortfolioMomentum: Equatable, Sendable {
             test: contributors.reduce(0) { $0 + ($1.1.series.locByKind.test.last ?? 0) },
             docs: contributors.reduce(0) { $0 + ($1.1.series.docLoc.last ?? 0) }
         )
-        let warning = contributors.count == workspaces.count
+        let coverageWarning = contributors.count == workspaces.count
             ? nil
             : "\(contributors.count) of \(workspaces.count) workspaces contributing"
+        let fallbackCount = contributors.reduce(0) { $0 + $1.1.lastFetchedRepositoryCount }
+        let warningParts = [
+            coverageWarning,
+            ReportDocument.fallbackNotice(repositoryCount: fallbackCount),
+        ].compactMap { $0 }
+        let warning = warningParts.isEmpty ? nil : warningParts.joined(separator: " · ")
 
         guard !contributors.isEmpty else {
             return .success(PortfolioMomentum(

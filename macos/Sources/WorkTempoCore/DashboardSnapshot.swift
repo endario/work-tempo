@@ -68,7 +68,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else {
             errorMessage = nil
         }
-        noticeMessage = nil
+        noticeMessage = report?.fetchWarning
 
         guard let report else {
             dataState = errorMessage == nil ? .empty : .failedEmpty
@@ -145,11 +145,10 @@ public struct DashboardSnapshot: Equatable, Sendable {
         isRefreshing = refreshState == .refreshing
         if case let .failed(message) = refreshState {
             errorMessage = message
-            noticeMessage = nil
         } else {
             errorMessage = nil
-            noticeMessage = portfolio.warning
         }
+        noticeMessage = portfolio.warning
 
         let summary = portfolio.momentum?.summary
         let stale = reportGeneratedAt.map { now.timeIntervalSince($0) > 86_400 } ?? true

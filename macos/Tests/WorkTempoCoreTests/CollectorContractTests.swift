@@ -23,6 +23,8 @@ final class CollectorContractTests: XCTestCase {
             "commit", "--quiet", "-m", "fixture",
         ])
 
+        try run("/usr/bin/git", ["-C", fixture.path, "update-ref", "refs/remotes/origin/main", "HEAD"])
+
         let executable = fixture.appending(path: "work-tempo")
         try Data("#!/bin/sh\nexec /usr/bin/env python3 -m work_tempo \"$@\"\n".utf8).write(to: executable)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)

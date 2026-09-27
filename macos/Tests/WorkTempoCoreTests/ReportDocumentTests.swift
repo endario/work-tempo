@@ -2,6 +2,24 @@ import XCTest
 @testable import WorkTempoCore
 
 final class ReportDocumentTests: XCTestCase {
+    func testDecodesRemoteSourceAndFallbackOutcome() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any])
+        var scope = try XCTUnwrap(object["scope"] as? [String: Any])
+        var repositories = try XCTUnwrap(scope["repositories"] as? [[String: Any]])
+        repositories[0]["sourceRef"] = "origin/main"
+        repositories[0]["sourceOid"] = "abc123"
+        repositories[0]["fetchOutcome"] = "failed"
+        scope["repositories"] = repositories
+        object["scope"] = scope
+
+        let report = try ReportDocument.decode(data: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(report.scope.repositories[0].sourceRef, "origin/main")
+        XCTAssertEqual(report.scope.repositories[0].sourceOid, "abc123")
+        XCTAssertEqual(report.scope.repositories[0].fetchOutcome, "failed")
+        XCTAssertEqual(report.lastFetchedRepositoryCount, 1)
+        XCTAssertEqual(report.fetchWarning, "1 repository using last-fetched origin/main")
+    }
+
     func testDecodesSchemaVersionOneDailyReport() throws {
         let report = try ReportDocument.decode(data: makeReportData())
 

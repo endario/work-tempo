@@ -10,10 +10,13 @@ import io
 import json
 import os
 import pickle
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -83,7 +86,7 @@ def make_report_document(
             deleted_kind_series=deleted_kind_series,
             language_series=language_series,
             repo_loc=[
-                (label, label, lines, docs, code, test, f"{label}-commit")
+                tempo.RepositoryLOC(label, label, lines, docs, code, test, f"{label}-commit")
                 for label, lines, docs, code, test in repo_loc
             ],
             language_loc=language_loc,
@@ -93,6 +96,21 @@ def make_report_document(
             include_forecast=include_forecast,
         )
     )
+
+
+def track_remote_main(repo: Path) -> None:
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", commit], cwd=repo, check=True)
+
+
+def make_tracked_repo(repo: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    track_remote_main(repo)
 
 
 class LocAnalysisScriptTest(unittest.TestCase):
@@ -493,7 +511,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             added_kind_series={"code": [5], "test": [3]},
             deleted_kind_series={"code": [2], "test": [2]},
             language_series={"Python <&": [30]},
-            repo_loc=[('repo <& "', "/tmp/workspace", 30, 5, 20, 10, "abc123")],
+            repo_loc=[tempo.RepositoryLOC('repo <& "', "/tmp/workspace", 30, 5, 20, 10, "abc123")],
             language_loc=[("Python <&", 30)],
             skipped_partition={
                 "vendor_like": [],
@@ -618,6 +636,725 @@ class LocAnalysisScriptTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 tempo.write_html(Path(tmp) / "report.html", document)
 
+    def test_fetch_source_tracks_remote_rewind(self) -> None:
+        tempo = load_script("tempo_fetch_rewind_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = root / "remote.git"
+            source = root / "source"
+            checkout = root / "checkout"
+            subprocess.run(["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True)
+            subprocess.run(["git", "clone", str(remote), str(source)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=source, check=True)
+            for version in ("one", "two"):
+                (source / "main.py").write_text(f"VERSION = '{version}'\n", encoding="utf-8")
+                subprocess.run(["git", "add", "main.py"], cwd=source, check=True)
+                subprocess.run(["git", "commit", "-m", version], cwd=source, check=True, capture_output=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=source, check=True, capture_output=True)
+            subprocess.run(["git", "clone", str(remote), str(checkout)], check=True, capture_output=True)
+            old_tip = subprocess.check_output(["git", "rev-parse", "HEAD^"], cwd=source, text=True).strip()
+            subprocess.run(["git", "reset", "--hard", old_tip], cwd=source, check=True, capture_output=True)
+            subprocess.run(["git", "push", "--force", "origin", "main"], cwd=source, check=True, capture_output=True)
+
+            self.assertEqual(tempo.fetch_source(checkout, 8), "fetched")
+            self.assertEqual(tempo.source_oid(checkout), old_tip)
+
+    def test_fetch_failure_preserves_last_fetched_source(self) -> None:
+        tempo = load_script("tempo_fetch_fallback_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            (repo / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+            tip = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            subprocess.run(["git", "update-ref", "refs/remotes/origin/main", tip], cwd=repo, check=True)
+
+            self.assertEqual(tempo.fetch_source(repo, 8), "failed")
+            self.assertEqual(tempo.source_oid(repo), tip)
+
+    def test_missing_remote_main_never_falls_back_to_head(self) -> None:
+        tempo = load_script("tempo_missing_source_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            (repo / "main.py").write_text("VALUE = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+
+            with self.assertRaisesRegex(RuntimeError, "origin/main is unavailable"):
+                tempo.source_oid(repo)
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_fetch_timeout_terminates_child_process(self) -> None:
+        tempo = load_script("tempo_fetch_timeout_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            pid_file = root / "child.pid"
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                '#!/bin/sh\n/bin/sh -c \'trap "" TERM; exec sleep 30\' &\nprintf "%s\\n" "$!" > "$PIDFILE"\nwait\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            with mock.patch.dict(os.environ, {
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "PIDFILE": str(pid_file),
+            }):
+                self.assertEqual(subprocess.check_output(["which", "git"], text=True).strip(), str(fake_git))
+                self.assertEqual(tempo.fetch_source(root, 3), "timed_out")
+            self.assertTrue(pid_file.exists())
+            child_pid = pid_file.read_text(encoding="utf-8").strip()
+            child = subprocess.run(
+                ["ps", "-p", child_pid, "-o", "stat="],
+                capture_output=True, text=True,
+            )
+            self.assertTrue(child.returncode != 0 or child.stdout.strip().startswith("Z"))
+
+    def test_fetch_budget_rotates_skipped_repository_on_next_run(self) -> None:
+        tempo = load_script("tempo_fetch_budget_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repos = []
+            for index in range(6):
+                repo = Path(tmp) / f"repo-{index}"
+                make_tracked_repo(repo)
+                repos.append((repo.name, repo))
+            cache = tempo.empty_cache()
+            attempted = []
+            lock = threading.Lock()
+
+            def stalled_fetch(repo, _timeout):
+                with lock:
+                    attempted.append(repo.name)
+                time.sleep(0.1)
+                return "timed_out"
+
+            with mock.patch.object(tempo, "fetch_source", side_effect=stalled_fetch):
+                first = tempo.fetch_sources(repos, cache, total_budget=0.04)
+                second = tempo.fetch_sources(repos, cache, total_budget=0.04)
+
+            self.assertEqual([item[3] for item in first],
+                             ["timed_out"] * 4 + ["budget_skipped"] * 2)
+            self.assertEqual([item[3] for item in second],
+                             ["timed_out"] * 2 + ["budget_skipped"] * 2 + ["timed_out"] * 2)
+            self.assertEqual(set(attempted[:4]), {f"repo-{index}" for index in range(4)})
+            self.assertEqual(set(attempted[4:]), {"repo-4", "repo-5", "repo-0", "repo-1"})
+
+    def test_churn_follows_pinned_remote_tip_not_local_head(self) -> None:
+        tempo = load_script("tempo_remote_churn_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            commits = []
+            for name in ("first", "second", "local_only"):
+                (repo / f"{name}.py").write_text(f"{name} = 1\n", encoding="utf-8")
+                subprocess.run(["git", "add", f"{name}.py"], cwd=repo, check=True)
+                subprocess.run(["git", "commit", "-m", name], cwd=repo, check=True, capture_output=True)
+                commits.append(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip())
+            config = tempo.default_config()
+            cache = tempo.empty_cache()
+            identity = tempo.repository_identity(repo)
+
+            def collect(tip):
+                buckets, status = tempo.collect_churn_cached(
+                    repo, config, False, cache, timezone.utc, "month",
+                    source_oid=tip, repo_identity=identity,
+                )
+                churn = sum(added + deleted for kinds in buckets.values() for added, deleted in kinds.values())
+                return churn, status
+
+            self.assertEqual(collect(commits[0]), (1, "miss"))
+            self.assertEqual(collect(commits[1]), (2, "incremental"))
+            self.assertEqual(collect(commits[0]), (1, "miss"))
+            self.assertNotIn(commits[2], json.dumps(cache["churn_repos"]))
+
+    def test_duplicate_display_labels_keep_repository_churn_separate(self) -> None:
+        tempo = load_script("tempo_duplicate_labels_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = root / "parent"
+            extras = []
+            for name, lines in (("parent", 1), ("extra_a", 2), ("extra_b", 3)):
+                repo = root / name
+                subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+                subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+                subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+                (repo / "main.py").write_text("VALUE = 1\n" * lines, encoding="utf-8")
+                subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+                subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+                track_remote_main(repo)
+                if name != "parent":
+                    extras.append({"label": "shared", "path": f"../{name}"})
+            (parent / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({"extra_repos": extras}), encoding="utf-8",
+            )
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(parent), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
+                    "--no-languages"]
+            with (mock.patch.object(sys, "argv", argv),
+                  mock.patch.object(sys, "stderr", io.StringIO()),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 0)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["series"]["churn"], [6])
+            self.assertEqual(report["series"]["loc"], [6])
+
+    def test_snapshots_follow_remote_tip_when_head_has_local_commits(self) -> None:
+        tempo = load_script("tempo_remote_snapshot_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            (repo / "main.py").write_text("ONE = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "remote"], cwd=repo, check=True, capture_output=True)
+            track_remote_main(repo)
+            (repo / "main.py").write_text("ONE = 1\nLOCAL = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "local only"], cwd=repo, check=True, capture_output=True)
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
+                    "--no-languages"]
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", stderr),
+                redirect_stdout(stdout),
+            ):
+                self.assertEqual(tempo.main(), 0)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["series"]["loc"], [1])
+            self.assertEqual(report["series"]["churn"], [1])
+            source = report["scope"]["repositories"][0]
+            self.assertEqual(source["sourceRef"], "origin/main")
+            self.assertEqual(source["fetchOutcome"], "failed")
+            self.assertEqual(source["sourceOid"], tempo.source_oid(repo))
+            self.assertIn(source["sourceOid"][:12], stdout.getvalue())
+            self.assertIn("fetch failed", stderr.getvalue())
+
+    def test_collection_git_errors_do_not_replace_reports(self) -> None:
+        tempo = load_script("tempo_atomic_collection_test", "src/work_tempo/cli.py")
+        for failing_operation in ("collect_churn_cached", "find_commit_at", "count_snapshot"):
+            with self.subTest(operation=failing_operation), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                make_tracked_repo(repo)
+                html = root / "report.html"
+                data = root / "report.json"
+                html.write_text("previous HTML", encoding="utf-8")
+                data.write_text("previous JSON", encoding="utf-8")
+                argv = ["work-tempo", "--root", str(repo), "--months", "1", "--workers", "1",
+                        "--no-cache", "--html", str(html), "--json", str(data), "--no-languages"]
+                stderr = io.StringIO()
+                with (
+                    mock.patch.object(sys, "argv", argv),
+                    mock.patch.object(sys, "stderr", stderr),
+                    mock.patch.object(tempo, failing_operation, side_effect=RuntimeError("token=SECRET")),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(tempo.main(), 1)
+                self.assertEqual(html.read_text(encoding="utf-8"), "previous HTML")
+                self.assertEqual(data.read_text(encoding="utf-8"), "previous JSON")
+                self.assertIn("collection failed", stderr.getvalue())
+                self.assertNotIn("SECRET", stderr.getvalue())
+
+    def test_cutoff_cache_reuses_null_and_invalidates_on_remote_tip_change(self) -> None:
+        tempo = load_script("tempo_cutoff_cache_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            cache = tempo.empty_cache()
+            identity = tempo.repository_identity(repo)
+            first_oid = tempo.source_oid(repo)
+            cutoff = "2030-01-01T00:00:00+00:00"
+            old_cutoff = "2000-01-01T00:00:00+00:00"
+            self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache), (first_oid, False))
+            self.assertEqual(tempo.cached_commit_at(repo, old_cutoff, first_oid, identity, cache), (None, False))
+            with mock.patch.object(tempo, "find_commit_at", side_effect=AssertionError("Git queried warm cutoff")):
+                self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache), (first_oid, True))
+                self.assertEqual(tempo.cached_commit_at(repo, old_cutoff, first_oid, identity, cache), (None, True))
+
+            (repo / "new.py").write_text("NEW = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "new.py"], cwd=repo, check=True)
+            old_date = os.environ | {
+                "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
+                "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
+            }
+            subprocess.run(["git", "commit", "-m", "backdated"], cwd=repo,
+                           env=old_date, check=True, capture_output=True)
+            track_remote_main(repo)
+            new_oid = tempo.source_oid(repo)
+            self.assertEqual(tempo.cached_commit_at(repo, cutoff, new_oid, identity, cache), (new_oid, False))
+            self.assertEqual(tempo.cached_commit_at(repo, cutoff, new_oid, identity, None), (new_oid, False))
+
+    def test_warm_refresh_resolves_repository_identity_once_per_repo(self) -> None:
+        tempo = load_script("tempo_warm_identity_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            make_tracked_repo(repo)
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "15",
+                    "--workers", "1", "--cache", str(root / "cache.json"), "--no-html",
+                    "--no-languages"]
+            with (mock.patch.object(sys, "argv", argv),
+                  mock.patch.object(sys, "stderr", io.StringIO()),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 0)
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", io.StringIO()),
+                mock.patch.object(tempo, "git_dir", wraps=tempo.git_dir) as git_dir,
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(tempo.main(), 0)
+            self.assertEqual(git_dir.call_count, 1)
+
+    def test_cache_schema_upgrade_discards_unverified_label_entries(self) -> None:
+        tempo = load_script("tempo_cache_upgrade_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "cache.json"
+            cache_path.write_text(json.dumps({
+                "schema_version": 4,
+                "snapshots": {"shared-label": {"total": 99}},
+                "churn_repos": {"shared-label": {"buckets": {}}},
+            }), encoding="utf-8")
+            self.assertEqual(tempo.load_cache(cache_path), tempo.empty_cache())
+
+            cache_path.write_text(json.dumps({
+                "schema_version": 5, "snapshots": {}, "churn_repos": {},
+            }), encoding="utf-8")
+            self.assertEqual(tempo.load_cache(cache_path)["commit_at"], {})
+
+    def test_cutoff_lookup_stays_pinned_when_tracking_ref_moves_mid_query(self) -> None:
+        tempo = load_script("tempo_cutoff_ref_move_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            first_oid = tempo.source_oid(repo)
+            (repo / "second.py").write_text("SECOND = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "second.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "second"], cwd=repo, check=True, capture_output=True)
+            second_oid = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            cutoff = "2030-01-01T00:00:00+00:00"
+            cache = tempo.empty_cache()
+            identity = tempo.repository_identity(repo)
+            original_lookup = tempo.find_commit_at
+
+            def move_ref_during_lookup(path, instant, source):
+                track_remote_main(repo)
+                return original_lookup(path, instant, source)
+
+            with mock.patch.object(tempo, "find_commit_at", side_effect=move_ref_during_lookup):
+                self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache),
+                                 (first_oid, False))
+            self.assertEqual(tempo.source_oid(repo), second_oid)
+            self.assertEqual(tempo.cached_commit_at(repo, cutoff, second_oid, identity, cache),
+                             (second_oid, False))
+
+    def test_cli_fetches_remote_main_then_falls_back_when_origin_is_unavailable(self) -> None:
+        tempo = load_script("tempo_fetch_report_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = root / "remote.git"
+            repo = root / "repo"
+            contributor = root / "contributor"
+            subprocess.run(["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True)
+            make_tracked_repo(repo)
+            subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "clone", str(remote), str(contributor)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=contributor, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=contributor, check=True)
+            (contributor / "main.py").write_text("VALUE = 1\nREMOTE = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=contributor, check=True)
+            subprocess.run(["git", "commit", "-m", "remote advance"], cwd=contributor,
+                           check=True, capture_output=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=contributor,
+                           check=True, capture_output=True)
+            remote_tip = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=contributor, text=True).strip()
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "1",
+                    "--workers", "1", "--cache", str(root / "cache.json"), "--no-html",
+                    "--json", str(output), "--no-languages"]
+
+            with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                self.assertEqual(tempo.main(), 0)
+            fetched = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(fetched["series"]["loc"], [2])
+            self.assertEqual(fetched["scope"]["repositories"][0]["sourceOid"], remote_tip)
+            self.assertEqual(fetched["scope"]["repositories"][0]["fetchOutcome"], "fetched")
+
+            subprocess.run(["git", "remote", "set-url", "origin", str(root / "missing.git")],
+                           cwd=repo, check=True)
+            stderr = io.StringIO()
+            with (mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stderr", stderr),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 0)
+            fallback = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(fallback["series"]["loc"], [2])
+            self.assertEqual(fallback["scope"]["repositories"][0]["sourceOid"], remote_tip)
+            self.assertEqual(fallback["scope"]["repositories"][0]["fetchOutcome"], "failed")
+            self.assertIn("using last-fetched origin/main", stderr.getvalue())
+
+    def test_missing_remote_ref_keeps_last_report(self) -> None:
+        tempo = load_script("tempo_missing_ref_report_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            make_tracked_repo(repo)
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
+                    "--no-languages"]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", io.StringIO()),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(tempo.main(), 0)
+            previous = output.read_bytes()
+            subprocess.run(["git", "update-ref", "-d", "refs/remotes/origin/main"],
+                           cwd=repo, check=True)
+            stderr = io.StringIO()
+            with (mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stderr", stderr),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 1)
+            self.assertEqual(output.read_bytes(), previous)
+            self.assertIn("origin/main is unavailable", stderr.getvalue())
+            self.assertIn("fetch main from origin", stderr.getvalue())
+            self.assertNotIn("exclude this repository", stderr.getvalue())
+
+    def test_parallel_archive_failure_does_not_publish_partial_report(self) -> None:
+        tempo = importlib.import_module("work_tempo.cli")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            make_tracked_repo(repo)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                '#!/bin/sh\nif [ "$1" = archive ]; then printf "token=SECRET\\n" >&2; exit 1; fi\nexec /usr/bin/git "$@"\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            output = root / "report.json"
+            output.write_text("previous", encoding="utf-8")
+            argv = ["work-tempo", "--root", str(repo), "--months", "1", "--workers", "2",
+                    "--no-cache", "--no-html", "--json", str(output), "--no-languages"]
+            stderr = io.StringIO()
+            stdout = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stderr", stderr),
+                redirect_stdout(stdout),
+            ):
+                self.assertEqual(tempo.main(), 1, stdout.getvalue())
+            self.assertEqual(output.read_text(encoding="utf-8"), "previous")
+            self.assertNotIn("SECRET", stderr.getvalue())
+
+    def test_shared_commit_in_distinct_repos_keeps_counting_policy_separate(self) -> None:
+        tempo = load_script("tempo_repo_identity_snapshot_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = root / "parent"
+            source = root / "source"
+            documentation = root / "documentation"
+            make_tracked_repo(parent)
+            make_tracked_repo(source)
+            subprocess.run(["git", "clone", str(source), str(documentation)], check=True, capture_output=True)
+            (parent / tempo.LOCAL_CONFIG_FILENAME).write_text(json.dumps({
+                "doc_only_repo_names": ["documentation"],
+                "extra_repos": [
+                    {"label": "shared", "path": "../source"},
+                    {"label": "shared", "path": "../documentation"},
+                ],
+            }), encoding="utf-8")
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(parent), "--period", "day", "--days", "1",
+                    "--workers", "1", "--cache", str(root / "cache.json"), "--no-html",
+                    "--json", str(output), "--no-languages"]
+            with (mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stderr", io.StringIO()),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 0)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["series"]["loc"], [2])
+            self.assertEqual(report["series"]["docLoc"], [1])
+            self.assertEqual(report["series"]["churn"], [2])
+            self.assertEqual(report["series"]["docChurn"], [1])
+
+    def test_missing_counted_extra_ref_suggests_exclusion(self) -> None:
+        tempo = load_script("tempo_missing_extra_ref_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = root / "parent"
+            extra = root / "extra"
+            make_tracked_repo(parent)
+            make_tracked_repo(extra)
+            subprocess.run(["git", "update-ref", "-d", "refs/remotes/origin/main"],
+                           cwd=extra, check=True)
+            (parent / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({"extra_repos": [{"label": "extra", "path": "../extra"}]}),
+                encoding="utf-8",
+            )
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(parent), "--months", "1", "--workers", "1",
+                    "--no-cache", "--no-html", "--json", str(output)]
+            stderr = io.StringIO()
+            with (mock.patch.object(sys, "argv", argv), mock.patch.object(sys, "stderr", stderr),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 1)
+            self.assertFalse(output.exists())
+            self.assertIn("exclude this repository", stderr.getvalue())
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_app_cancellation_kills_fetch_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            pid_file = root / "child.pid"
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                '#!/bin/sh\n/bin/sh -c \'trap "" TERM; exec sleep 30\' &\nprintf "%s\\n" "$!" > "$PIDFILE"\nwait\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "PIDFILE": str(pid_file),
+                "PYTHONPATH": str(REPO_ROOT / "src"),
+            }
+            collector = subprocess.Popen(
+                [sys.executable, "-c", "from work_tempo.cli import fetch_source; "
+                 "from pathlib import Path; fetch_source(Path('.'), 8)"],
+                cwd=root, env=environment, start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            child_pid = None
+            try:
+                deadline = time.monotonic() + 5
+                while not pid_file.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue(pid_file.exists())
+                child_pid = int(pid_file.read_text(encoding="utf-8").strip())
+                os.killpg(collector.pid, signal.SIGTERM)
+                time.sleep(0.1)
+                if collector.poll() is None:
+                    os.killpg(collector.pid, signal.SIGKILL)
+                collector.wait(timeout=5)
+                child = subprocess.run(["ps", "-p", str(child_pid), "-o", "stat="],
+                                       capture_output=True, text=True)
+                self.assertTrue(child.returncode != 0 or child.stdout.strip().startswith("Z"))
+            finally:
+                if collector.poll() is None:
+                    os.killpg(collector.pid, signal.SIGKILL)
+                    collector.wait()
+                if child_pid is not None:
+                    child = subprocess.run(["ps", "-p", str(child_pid), "-o", "stat="],
+                                           capture_output=True, text=True)
+                    if child.returncode == 0 and not child.stdout.strip().startswith("Z"):
+                        os.kill(child_pid, signal.SIGKILL)
+
+    def test_fetches_independent_repositories_concurrently(self) -> None:
+        tempo = load_script("tempo_parallel_fetch_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repos = []
+            for index in range(4):
+                repo = Path(tmp) / f"repo-{index}"
+                make_tracked_repo(repo)
+                repos.append((f"repo-{index}", repo))
+            barrier = threading.Barrier(4, timeout=1)
+
+            def overlapping_fetch(_repo, _timeout):
+                barrier.wait()
+                return "failed"
+
+            with mock.patch.object(tempo, "fetch_source", side_effect=overlapping_fetch):
+                entries = tempo.fetch_sources(repos, tempo.empty_cache(), total_budget=5)
+            self.assertEqual([status for _label, _path, _oid, status in entries], ["failed"] * 4)
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_fetch_timeout_with_inaccessible_process_group_falls_back(self) -> None:
+        tempo = load_script("tempo_fetch_permission_test", "src/work_tempo/cli.py")
+        process = mock.Mock(pid=123456, returncode=-15)
+        process.wait.side_effect = [subprocess.TimeoutExpired("git fetch", 8), None]
+        with (
+            mock.patch.object(tempo.subprocess, "Popen", return_value=process),
+            mock.patch.object(tempo.os, "killpg", side_effect=[None, PermissionError("denied")]),
+            mock.patch.object(tempo.time, "sleep"),
+        ):
+            self.assertEqual(tempo.fetch_source(Path("/tmp/repo"), 8), "timed_out")
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_app_cancellation_kills_concurrent_fetches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repos = []
+            for index in range(4):
+                repo = root / f"repo-{index}"
+                make_tracked_repo(repo)
+                repos.append((repo.name, repo))
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                '#!/bin/sh\nif [ "$1" = fetch ]; then\n'
+                '/bin/sh -c \'trap "" TERM; exec sleep 30\' &\n'
+                'printf "%s\\n" "$!" > "$PID_DIR/$(basename "$PWD").pid"\n'
+                'wait\nelse\nexec /usr/bin/git "$@"\nfi\n',
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "PID_DIR": str(root),
+                "PYTHONPATH": str(REPO_ROOT / "src"),
+            }
+            code = (
+                "from pathlib import Path; from work_tempo.cli import fetch_sources; "
+                f"fetch_sources([(name, Path(path)) for name, path in {[(name, str(path)) for name, path in repos]!r}], None)"
+            )
+            collector = subprocess.Popen(
+                [sys.executable, "-c", code], cwd=root, env=environment,
+                start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            child_pids = []
+            try:
+                deadline = time.monotonic() + 5
+                while len(list(root.glob("repo-*.pid"))) < 4 and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertEqual(len(list(root.glob("repo-*.pid"))), 4)
+                child_pids = [int(path.read_text(encoding="utf-8").strip()) for path in root.glob("repo-*.pid")]
+                os.killpg(collector.pid, signal.SIGTERM)
+                time.sleep(0.1)
+                if collector.poll() is None:
+                    os.killpg(collector.pid, signal.SIGKILL)
+                collector.wait(timeout=5)
+                for pid in child_pids:
+                    child = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
+                                           capture_output=True, text=True)
+                    self.assertTrue(child.returncode != 0 or child.stdout.strip().startswith("Z"))
+            finally:
+                if collector.poll() is None:
+                    os.killpg(collector.pid, signal.SIGKILL)
+                    collector.wait()
+                for pid in child_pids:
+                    child = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
+                                           capture_output=True, text=True)
+                    if child.returncode == 0 and not child.stdout.strip().startswith("Z"):
+                        os.kill(pid, signal.SIGKILL)
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_fetch_process_error_uses_last_fetched_ref(self) -> None:
+        tempo = load_script("tempo_fetch_wait_error_test", "src/work_tempo/cli.py")
+        process = mock.Mock(pid=123456)
+        process.wait.side_effect = [OSError("token=SECRET"), None]
+        with (
+            mock.patch.object(tempo.subprocess, "Popen", return_value=process),
+            mock.patch.object(tempo.os, "killpg"),
+        ):
+            self.assertEqual(tempo.fetch_source(Path("/tmp/repo"), 8), "failed")
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_denied_fetch_cleanup_cannot_wait_forever(self) -> None:
+        tempo = load_script("tempo_fetch_bounded_cleanup_test", "src/work_tempo/cli.py")
+        process = mock.Mock(pid=123456)
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired("git fetch", 8),
+            subprocess.TimeoutExpired("git fetch", 0.5),
+            None,
+        ]
+        with (
+            mock.patch.object(tempo.subprocess, "Popen", return_value=process),
+            mock.patch.object(tempo.os, "killpg", side_effect=PermissionError("denied")),
+            mock.patch.object(tempo.time, "sleep"),
+        ):
+            self.assertEqual(tempo.fetch_source(Path("/tmp/repo"), 8), "timed_out")
+            self.assertLessEqual(len(process.wait.call_args_list), 3)
+
+    @unittest.skipUnless(os.name == "posix", "signal masking requires POSIX")
+    def test_signal_during_fetch_spawn_cleans_registered_process(self) -> None:
+        tempo = load_script("tempo_fetch_spawn_signal_test", "src/work_tempo/cli.py")
+        process = mock.Mock(pid=123456)
+        process.wait.return_value = -15
+
+        def interrupt_spawn(*_args, **_kwargs):
+            signal.raise_signal(signal.SIGTERM)
+            return process
+
+        with (
+            mock.patch.object(tempo.subprocess, "Popen", side_effect=interrupt_spawn),
+            mock.patch.object(tempo.os, "killpg") as kill_group,
+        ):
+            with self.assertRaises(SystemExit):
+                tempo.fetch_source(Path("/tmp/repo"), 8)
+        self.assertTrue(kill_group.called)
+        self.assertEqual(tempo._active_fetches, set())
+
+    def test_duplicate_checkout_entries_keep_each_captured_source_oid(self) -> None:
+        tempo = load_script("tempo_duplicate_path_provenance_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            make_tracked_repo(root)
+            first_oid = tempo.source_oid(root)
+            (root / "main.py").write_text("VALUE = 1\nSECOND = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "main.py"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "second"], cwd=root, check=True, capture_output=True)
+            second_oid = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            (root / tempo.LOCAL_CONFIG_FILENAME).write_text(
+                json.dumps({"extra_repos": [{"label": "again", "path": "."}]}), encoding="utf-8",
+            )
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(root), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--no-languages",
+                    "--json", str(output)]
+            entries = [("(parent)", root, first_oid, "failed"), ("again", root, second_oid, "fetched")]
+            with (mock.patch.object(sys, "argv", argv),
+                  mock.patch.object(sys, "stderr", io.StringIO()),
+                  mock.patch.object(tempo, "fetch_sources", return_value=entries),
+                  redirect_stdout(io.StringIO())):
+                self.assertEqual(tempo.main(), 0)
+            scope = json.loads(output.read_text(encoding="utf-8"))["scope"]["repositories"]
+            self.assertEqual({item["label"]: item["sourceOid"] for item in scope},
+                             {"(parent)": first_oid, "again": second_oid})
+            self.assertEqual({item["label"]: item["fetchOutcome"] for item in scope},
+                             {"(parent)": "failed", "again": "fetched"})
+
+    def test_html_header_shows_last_fetched_source_warning(self) -> None:
+        tempo = load_script("tempo_html_fetch_warning_test", "src/work_tempo/cli.py")
+        document = make_report_document(
+            tempo, ["2026-08"], [1], [0], [1], [0], [1], [0],
+            {"code": [1], "test": [0]}, {"code": [1], "test": [0]},
+            {"code": [1], "test": [0]}, {"code": [0], "test": [0]},
+            {"Python": [1]}, [("repo", 1, 0, 1, 0)], [("Python", 1)],
+            {"vendor_like": [], "non_product": [], "unavailable_submodule": [], "unavailable_extra": []},
+            False, timezone.utc, "month",
+        )
+        document["scope"]["repositories"][0].update({
+            "sourceRef": "origin/main", "sourceOid": "abc123", "fetchOutcome": "failed",
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "report.html"
+            tempo.write_html(output, document)
+            html = output.read_text(encoding="utf-8")
+        self.assertIn('role="status">1 repository using last-fetched origin/main</div>', html)
+
     def test_git_failures_are_not_returned_as_empty_metrics(self) -> None:
         tempo = load_script("tempo_git_failure_test", "src/work_tempo/cli.py")
 
@@ -639,26 +1376,24 @@ class LocAnalysisScriptTest(unittest.TestCase):
         )
         with mock.patch.object(tempo.subprocess, "run", return_value=churn_failure):
             with self.assertRaisesRegex(RuntimeError, "repository unavailable"):
-                tempo.collect_churn_by_period(Path("/tmp/repo"), tempo.default_config())
+                tempo.collect_churn_by_period(Path("/tmp/repo"), tempo.default_config(), "deadbeef")
 
         cache = tempo.empty_cache()
-        with (
-            mock.patch.object(tempo, "git_head", return_value="abc123"),
-            mock.patch.object(
-                tempo,
-                "collect_churn_by_period",
-                side_effect=RuntimeError("transient failure"),
-            ),
+        with mock.patch.object(
+            tempo,
+            "collect_churn_by_period",
+            side_effect=RuntimeError("transient failure"),
         ):
             with self.assertRaisesRegex(RuntimeError, "transient failure"):
                 tempo.collect_churn_cached(
-                    "repo",
                     Path("/tmp/repo"),
                     tempo.default_config(),
                     False,
                     cache,
                     timezone.utc,
                     "month",
+                    source_oid="abc123",
+                    repo_identity="repo",
                 )
         self.assertEqual(cache["churn_repos"], {})
 
@@ -731,6 +1466,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             (root / "README.md").write_text("# Fixture\n\nDocumentation.\n", encoding="utf-8")
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             subprocess.run(["git", "commit", "-m", "fixture"], cwd=root, check=True, capture_output=True)
+            track_remote_main(root)
             tracked_config = root / ".work-tempo.json"
             local_config = root / ".work-tempo.local.json"
             tracked_config.write_text('{"report_title": "Shared"}\n', encoding="utf-8")
@@ -1299,6 +2035,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             )
             git("add", ".")
             git("commit", "-m", "initial")
+            track_remote_main(repo)
 
             def run_report(workers: int) -> dict:
                 json_path = Path(tmp) / f"workers-{workers}.json"
@@ -1306,7 +2043,9 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     "work-tempo", "--root", str(repo), "--period", "day", "--days", "3",
                     "--workers", str(workers), "--no-cache", "--no-html", "--json", str(json_path),
                 ]
-                with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                with (mock.patch.object(sys, "argv", argv),
+                      mock.patch.object(sys, "stderr", io.StringIO()),
+                      redirect_stdout(io.StringIO())):
                     self.assertEqual(tempo.main(), 0)
                 document = json.loads(json_path.read_text(encoding="utf-8"))
                 document.pop("generatedAt")
@@ -1467,8 +2206,8 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
                 snap = tempo.count_snapshot(repo, commit, config)
-                churn = tempo.collect_churn_by_period(repo, config, period="month")
-                source_only_churn = tempo.collect_churn_by_period(repo, config, include_docs=False, period="month")
+                churn = tempo.collect_churn_by_period(repo, config, commit, period="month")
+                source_only_churn = tempo.collect_churn_by_period(repo, config, commit, include_docs=False, period="month")
 
                 self.assertEqual(snap.total, 0)
                 self.assertEqual(snap.by_kind, {})
@@ -1535,6 +2274,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+            track_remote_main(repo)
 
             extra_repo = temp_root / "shared-sdk"
             extra_repo.mkdir()
@@ -1568,6 +2308,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
+            track_remote_main(extra_repo)
 
             extra_repo_config = [
                 {"label": "shared-sdk", "path": "../shared-sdk"},
@@ -1593,8 +2334,13 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     "--json", str(json_path),
                     "--no-languages",
                 ]
-                with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                stdout = io.StringIO()
+                with (mock.patch.object(sys, "argv", argv),
+                      mock.patch.object(sys, "stderr", io.StringIO()),
+                      redirect_stdout(stdout)):
                     self.assertEqual(tempo.main(), 0)
+                if name == "warm":
+                    self.assertIn("0 cutoff lookups", stdout.getvalue())
                 self.assertTrue(html_path.exists())
                 return json.loads(json_path.read_text(encoding="utf-8"))
 

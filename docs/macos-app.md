@@ -60,9 +60,9 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 - Manual refresh in All Workspaces runs every tracked workspace sequentially, showing the active workspace and `N of M` progress. A failure is recorded on that workspace and the sweep continues. Cancelling stops the active collector and drops the rest of the queue. A restart also drops it and never resumes a manual sweep on its own.
 - A first collection (no report, or too little history) is attended, cancellable, and has no timeout. Routine refreshes time out after 300 seconds. Cancellation and timeout kill the collector's process group and leave the previous report untouched.
 
-**Cache sharing.** The app shares the collector's cache with terminal runs. Writes are atomic, so concurrent runs cannot corrupt it; a last-writer race can only discard warmed entries and cause recomputation, never change values. The collector checkpoints its cache after churn collection and after each snapshot batch, so an interrupted first run resumes instead of restarting.
+**Cache sharing.** The app shares the collector's cache with terminal runs. Writes are atomic, so concurrent runs cannot corrupt it; a last-writer race can only discard warmed entries and cause recomputation, never change values. The collector checkpoints its cache after churn and cutoff lookup, and after each snapshot batch, so an interrupted first run resumes instead of restarting. Cache schema 5 starts cold once after the upgrade.
 
-**What collection touches.** It reads the tracked Git repositories locally (`git log`, `git archive`, repository inspection). Nothing in it makes network requests or intentionally runs hooks, though repository-local Git configuration still applies.
+**What collection touches.** For each counted repository, the collector best-effort fetches `origin/main` from its configured `origin` (up to four concurrent attempts, 8-second per-repo and 45-second per-workspace limits), updating the remote-tracking ref but not the checked-out branch or worktree. It then reads Git history locally at the captured ref. A failed fetch uses the last-fetched ref; if none exists, the report is not replaced. Fetch outcomes are stored with each repository in the report, and fallback is shown in the existing notice banner.
 
 ## Metrics
 
@@ -141,7 +141,8 @@ Errors are scoped to the affected workspace and never discard the last good repo
 | Fewer than 30 common closed labels | Headline unavailable; charts show what exists |
 | CLI not found | Lists the searched locations; cached data stays visible |
 | Directory missing or not a Git root | Detected before invoking the collector; workspace stays for correction or removal |
-| Collector exits non-zero | Previous report kept; the final diagnostic line is shown |
+| Collector exits non-zero or a counted repository lacks `origin/main` | Previous report kept; the final sanitized diagnostic line is shown |
+| Fetch fails but a last-fetched `origin/main` exists | Report uses that ref; individual and aggregate notices identify the fallback |
 | Unsupported report schema | File retained, upgrade error shown, metrics not interpreted |
 | Corrupt state or report file | File isolated; remaining valid state loads |
 | Routine refresh timeout | Process group killed, workspace marked stale |

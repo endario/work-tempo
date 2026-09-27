@@ -12,7 +12,7 @@ The questions it answers: is authored source growing, how much work is replacing
 
 The collector owns:
 
-- Git repository and initialized-submodule discovery, plus explicitly configured extra repositories.
+- Git repository and initialized-submodule discovery, plus explicitly configured extra repositories; all counted history comes from each repository's `origin/main`.
 - Source, test, language, documentation, snapshot, and churn classification.
 - Period bucketing in the system timezone, with UTC fallback.
 - A persistent incremental cache in the user's cache directory.
@@ -64,7 +64,7 @@ A key that changes counting is only accepted under a version that older releases
 
 ## Counting model
 
-- LOC snapshots count newline-delimited tracked files at the last commit available at each period cutoff, read with `git archive`.
+- LOC snapshots count newline-delimited tracked files at the last commit reachable from the captured `origin/main` tip before each period cutoff, read with `git archive`.
 - Source is split into code and tests using conventional test directories and test/spec/e2e filename patterns.
 - Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same counting policy.
 - Blank lines and comments count: the unit is physical lines, not semantic SLOC.
@@ -102,11 +102,14 @@ Artifacts live under a per-workspace directory in the platform cache root:
 
 `WORK_TEMPO_CACHE_HOME` overrides the root. The directory is `<workspace-name>-<hash>`, where the hash covers the canonical root path and Git directory, so simultaneous workspaces never overwrite each other and analyzed repositories are never written to. `cache.json` and `report.html` sit side by side.
 
+The collector best-effort fetches `origin/main` for each counted repository with bounded, non-interactive attempts, then pins each locally available tip for all churn and snapshot operations in that run. A failed fetch uses the last-fetched ref and records that outcome in the report. A counted repository without the ref aborts collection; churn or snapshot counting failures also abort before a new report is published. See [cache/design.md](cache/design.md) for the source-selection and cutoff-cache design.
+
 What keeps the cache correct:
 
-- **Snapshot entries** are keyed by repository, commit, and the normalized effective counting policy, so a policy change selects fresh entries instead of returning stale counts.
-- **Churn entries** also include the period kind and resolved timezone.
-- **A cache schema change** invalidates the whole cache; unreadable or invalid data is treated as a cold start.
+- **Snapshot entries** are keyed by canonical repository identity, commit, and normalized effective counting policy.
+- **Churn entries** also include the period kind and resolved timezone, and track the pinned source tip.
+- **Cutoff entries** cache the selected commit (including no-commit results) under repository identity, source tip, and exact cutoff time. A tip change invalidates that repository's cutoff entries, even if the change is a fast-forward.
+- **A cache schema change** invalidates the whole cache; schema 5 discards earlier label-keyed entries once. Unreadable or invalid data is treated as a cold start.
 - **Rewritten history** (a cached commit that is no longer an ancestor) triggers a full churn rescan.
 - **Writes** go to a temporary file and are atomically renamed, so concurrent readers never see a partial document.
 
