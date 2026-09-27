@@ -111,6 +111,7 @@ struct SourceVolumeChart: View {
         }
         .frame(height: 116)
         .accessibilityLabel("Code, test, and documentation lines over time")
+        .accessibilityChartDescriptor(SourceChartDescriptor(timeline: timeline))
     }
 
     private var volumeBands: [VolumeBand] {

@@ -102,7 +102,7 @@ A 430-point popover with a fixed header and footer:
 1. Header: scope menu (All Workspaces and each workspace), last refresh, refresh, and add-workspace.
 2. Hero: churn per day and net source LOC, each with a sparkline. The open day appears as a faded trailing segment marked to-date.
 3. Metric columns: source, code, tests, docs.
-4. **Source LOC** chart: day-end code and test lines stacked above the axis across twelve months, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
+4. **Source LOC** chart: day-end code and test lines stacked above the axis over the configured history window, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
 5. **Monthly Churn** chart: the same six series by calendar month. The current month keeps its full slot but fills only the elapsed fraction.
 6. Footer: remove the selected workspace, quit.
 
