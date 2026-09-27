@@ -8,6 +8,7 @@ struct SourceChartDescriptor: AXChartDescriptorRepresentable {
     func makeChartDescriptor() -> AXChartDescriptor {
         let values = timeline.codeLoc + timeline.testLoc + timeline.docLoc
         let minimum = min(0, values.min() ?? 0)
+        // Match the visual's stacked source range while speaking each component separately.
         let maximum = max(1, values.max() ?? 0, zip(timeline.codeLoc, timeline.testLoc).map(+).max() ?? 0)
         let xAxis = AXCategoricalDataAxisDescriptor(title: "Day", categoryOrder: timeline.labels)
         let yAxis = AXNumericDataAxisDescriptor(

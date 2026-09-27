@@ -28,9 +28,11 @@ final class SourceChartDescriptorTests: XCTestCase {
     func testRefreshReplacesDescriptorValuesRatherThanLeavingCachedSeries() {
         let old = SourceChartDescriptor(timeline: timeline(docs: [5, 6, 7])).makeChartDescriptor()
 
-        SourceChartDescriptor(timeline: timeline(docs: [8, 9, 10])).updateChartDescriptor(old)
+        SourceChartDescriptor(timeline: timeline(docs: [-8, -9, -10])).updateChartDescriptor(old)
 
-        XCTAssertEqual(old.series[2].dataPoints.map(number), [8, 9, 10])
+        XCTAssertEqual(old.series[2].dataPoints.map(number), [-8, -9, -10])
+        XCTAssertEqual(old.yAxis?.range.lowerBound, -10)
+        XCTAssertTrue(old.summary?.contains("negative line counts") == true)
     }
 
     private func timeline(docs: [Int]) -> ChartTimeline {
