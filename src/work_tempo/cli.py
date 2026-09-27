@@ -32,18 +32,22 @@ import calendar
 import hashlib
 import json
 import os
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import threading
+import time
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, as_completed, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
 from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-CACHE_SCHEMA_VERSION = 4
+CACHE_SCHEMA_VERSION = 5
 SUPPORTED_CONFIG_VERSIONS = (1, 2)
 CONFIG_KEYS_V1 = frozenset({
     "report_title",
@@ -404,6 +408,19 @@ class Snapshot:
 
 
 @dataclass(frozen=True)
+class RepositoryLOC:
+    label: str
+    path: str
+    lines: int
+    docs: int
+    code: int
+    test: int
+    commit: str | None
+    source_oid: str | None = None
+    fetch_outcome: str | None = None
+
+
+@dataclass(frozen=True)
 class ReportInput:
     root: Path
     report_title: str
@@ -424,7 +441,7 @@ class ReportInput:
     added_kind_series: dict[str, list[int]]
     deleted_kind_series: dict[str, list[int]]
     language_series: dict[str, list[int]]
-    repo_loc: list[tuple[str, str, int, int, int, int, str | None]]
+    repo_loc: list[RepositoryLOC]
     language_loc: list[tuple[str, int]]
     skipped_partition: dict[str, list[str]]
     include_vendor: bool
@@ -447,6 +464,10 @@ def git_dir(repo: Path) -> Path | None:
         return None
     path = Path(out)
     return (path if path.is_absolute() else repo / path).resolve()
+
+
+def repository_identity(repo: Path) -> str:
+    return f"{repo.resolve()}\n{git_dir(repo)}"
 
 
 def user_cache_root() -> Path:
@@ -490,8 +511,210 @@ def extra_repo_available(path: Path) -> bool:
     return path.is_dir() and is_repo_root(path)
 
 
-def git_head(repo: Path) -> str | None:
-    return run(["git", "rev-parse", "HEAD"], cwd=repo)
+_active_fetches: set[subprocess.Popen] = set()
+_fetch_lock = threading.RLock()
+
+
+@contextmanager
+def fetch_signal_guard():
+    if os.name != "posix" or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+
+    def terminate(signum, _frame):
+        with _fetch_lock:
+            processes = list(_active_fetches)
+        for process in processes:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + signum)
+
+    for sig in previous:
+        signal.signal(sig, terminate)
+    try:
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def finish_fetch_process(process: subprocess.Popen) -> None:
+    try:
+        process.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def launch_fetch(repo: Path, environment: dict[str, str]) -> subprocess.Popen:
+    blocked = None
+    if os.name == "posix" and threading.current_thread() is threading.main_thread():
+        blocked = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+    process = None
+    try:
+        with _fetch_lock:
+            process = subprocess.Popen(
+                ["git", "fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"],
+                cwd=repo,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                start_new_session=os.name == "posix",
+            )
+            _active_fetches.add(process)
+    finally:
+        if blocked is not None:
+            try:
+                signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+            except BaseException:
+                if process is not None:
+                    with _fetch_lock:
+                        _active_fetches.discard(process)
+                    finish_fetch_process(process)
+                raise
+    return process
+
+
+def fetch_source(repo: Path, timeout_seconds: float) -> str:
+    environment = os.environ.copy()
+    environment.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_ASKPASS": "false",
+        "SSH_ASKPASS": "false",
+        "GCM_INTERACTIVE": "never",
+    })
+    with fetch_signal_guard():
+        try:
+            process = launch_fetch(repo, environment)
+        except OSError:
+            return "failed"
+        try:
+            try:
+                process.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    try:
+                        os.killpg(process.pid, signal.SIGTERM)
+                    except OSError:
+                        pass
+                    time.sleep(0.1)
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                else:
+                    process.kill()
+                finish_fetch_process(process)
+                return "timed_out"
+            except OSError:
+                if os.name == "posix":
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                else:
+                    process.kill()
+                finish_fetch_process(process)
+                return "failed"
+            except BaseException:
+                if os.name == "posix":
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                else:
+                    process.kill()
+                finish_fetch_process(process)
+                raise
+            return "fetched" if process.returncode == 0 else "failed"
+        finally:
+            with _fetch_lock:
+                _active_fetches.discard(process)
+
+
+def source_oid(repo: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "refs/remotes/origin/main^{commit}"],
+        cwd=repo, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{repo}: origin/main is unavailable; fetch main from origin"
+        )
+    return result.stdout.strip()
+
+
+def fetch_sources(
+    repos: list[tuple[str, Path]], cache: dict | None, total_budget: float = 45,
+    identities: list[str] | None = None,
+) -> list[tuple[str, Path, str, str]]:
+    if identities is None:
+        identities = [repository_identity(path) for _label, path in repos]
+    next_identity = cache.get("fetch_next") if cache is not None else None
+    start = identities.index(next_identity) if next_identity in identities else 0
+    order = list(range(start, len(repos))) + list(range(start))
+    results: list[tuple[str, Path, str, str] | None] = [None] * len(repos)
+    began = time.monotonic()
+    first_skipped: str | None = None
+
+    def record(index: int, status: str) -> None:
+        label, path = repos[index]
+        try:
+            oid = source_oid(path)
+        except RuntimeError as exc:
+            if index != 0:
+                raise RuntimeError(f"{exc}, or exclude this repository") from exc
+            raise
+        results[index] = (label, path, oid, status)
+
+    with fetch_signal_guard(), ThreadPoolExecutor(max_workers=4) as pool:
+        active = {}
+        position = 0
+
+        def schedule() -> None:
+            nonlocal position
+            while len(active) < 4 and position < len(order):
+                remaining = total_budget - (time.monotonic() - began)
+                if remaining <= 0:
+                    break
+                index = order[position]
+                position += 1
+                active[pool.submit(fetch_source, repos[index][1], min(8, remaining))] = index
+
+        schedule()
+        while active:
+            remaining = total_budget - (time.monotonic() - began)
+            completed, _pending = wait(
+                active, timeout=max(0, remaining), return_when=FIRST_COMPLETED,
+            )
+            if not completed:
+                completed, _pending = wait(active, return_when=FIRST_COMPLETED)
+            for future in completed:
+                record(active.pop(future), future.result())
+            schedule()
+        for index in order[position:]:
+            if first_skipped is None:
+                first_skipped = identities[index]
+            record(index, "budget_skipped")
+
+    if cache is not None:
+        if first_skipped is None:
+            cache.pop("fetch_next", None)
+        else:
+            cache["fetch_next"] = first_skipped
+    return [result for result in results if result is not None]
 
 
 def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
@@ -554,6 +777,7 @@ def empty_cache() -> dict:
         "schema_version": CACHE_SCHEMA_VERSION,
         "snapshots": {},
         "churn_repos": {},
+        "commit_at": {},
     }
 
 
@@ -568,6 +792,7 @@ def load_cache(path: Path | None) -> dict:
         return empty_cache()
     data.setdefault("snapshots", {})
     data.setdefault("churn_repos", {})
+    data.setdefault("commit_at", {})
     return data
 
 
@@ -607,12 +832,12 @@ def save_cache(path: Path | None, cache: dict | None) -> None:
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
 
 
-def snapshot_cache_key(label: str, commit: str, config: Config, include_vendor: bool) -> str:
-    return f"{config.signature(include_vendor)}|{label}|{commit}"
+def snapshot_cache_key(repo_identity: str, commit: str, config: Config, include_vendor: bool) -> str:
+    return f"{config.signature(include_vendor)}|{repo_identity}|{commit}"
 
 
-def churn_cache_key(label: str, config: Config, include_vendor: bool, report_tz: tzinfo, period: str) -> str:
-    return f"{config.signature(include_vendor)}|{timezone_signature(report_tz)}|{period}|{label}"
+def churn_cache_key(repo_identity: str, config: Config, include_vendor: bool, report_tz: tzinfo, period: str) -> str:
+    return f"{config.signature(include_vendor)}|{timezone_signature(report_tz)}|{period}|{repo_identity}"
 
 
 def snapshot_to_cache(snap: Snapshot) -> dict:
@@ -744,9 +969,9 @@ def partition_skipped_repos(root: Path, config: Config, skipped_repos: list[str]
     }
 
 
-def find_commit_at(repo: Path, cutoff_iso: str) -> str | None:
+def find_commit_at(repo: Path, cutoff_iso: str, source_oid: str) -> str | None:
     result = subprocess.run(
-        ["git", "log", "-1", "--format=%H", f"--before={cutoff_iso}", "HEAD"],
+        ["git", "log", "-1", "--format=%H", f"--before={cutoff_iso}", source_oid],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -757,6 +982,32 @@ def find_commit_at(repo: Path, cutoff_iso: str) -> str | None:
             f"{result.stderr.strip() or 'unknown error'}"
         )
     return result.stdout.strip() or None
+
+
+def cached_commit_at(
+    repo: Path,
+    cutoff_iso: str,
+    source_oid: str,
+    repo_identity: str,
+    cache: dict | None,
+) -> tuple[str | None, bool]:
+    if cache is None:
+        return find_commit_at(repo, cutoff_iso, source_oid), False
+    repos_cache = cache.setdefault("commit_at", {})
+    if not isinstance(repos_cache, dict):
+        repos_cache = cache["commit_at"] = {}
+    entry = repos_cache.get(repo_identity)
+    if not isinstance(entry, dict) or entry.get("source_oid") != source_oid:
+        entry = {"source_oid": source_oid, "cutoffs": {}}
+        repos_cache[repo_identity] = entry
+    cutoffs = entry.get("cutoffs")
+    if not isinstance(cutoffs, dict):
+        cutoffs = entry["cutoffs"] = {}
+    if cutoff_iso in cutoffs and (cutoffs[cutoff_iso] is None or isinstance(cutoffs[cutoff_iso], str)):
+        return cutoffs[cutoff_iso], True
+    commit = find_commit_at(repo, cutoff_iso, source_oid)
+    cutoffs[cutoff_iso] = commit
+    return commit, False
 
 
 def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool = False) -> Snapshot:
@@ -823,6 +1074,7 @@ def _snapshot_task(args: tuple[str, str, bool, Config]) -> Snapshot:
 def collect_churn_by_period(
     repo: Path,
     config: Config,
+    revision: str,
     include_vendor: bool = False,
     rev_range: str | None = None,
     report_tz: tzinfo | None = None,
@@ -834,8 +1086,7 @@ def collect_churn_by_period(
     Binary files (numstat '-') and files outside the configured languages are skipped.
     """
     cmd = ["git", "log", "--no-merges", "--numstat", "--format=__C__ %aI"]
-    if rev_range:
-        cmd.append(rev_range)
+    cmd.append(rev_range if rev_range else revision)
     result = subprocess.run(
         cmd,
         cwd=repo, capture_output=True, text=True, errors="replace",
@@ -926,61 +1177,62 @@ def _churn_buckets_from_cache(raw: object) -> dict[str, dict[str, tuple[int, int
 
 
 def collect_churn_cached(
-    label: str,
     repo: Path,
     config: Config,
     include_vendor: bool,
     cache: dict | None,
     report_tz: tzinfo,
     period: str,
+    *,
+    source_oid: str,
+    repo_identity: str,
 ) -> tuple[dict[str, dict[str, tuple[int, int]]], str]:
     """Return churn buckets and a cache status: hit, incremental, miss, disabled."""
     if cache is None:
         return collect_churn_by_period(
             repo,
             config,
+            source_oid,
             include_vendor=include_vendor,
             report_tz=report_tz,
             include_docs=True,
             period=period,
         ), "disabled"
 
-    head = git_head(repo)
-    if head is None:
-        return {}, "miss"
-
-    key = churn_cache_key(label, config, include_vendor, report_tz, period)
+    key = churn_cache_key(repo_identity, config, include_vendor, report_tz, period)
     repos_cache = cache.setdefault("churn_repos", {})
     entry = repos_cache.get(key)
     if isinstance(entry, dict):
-        cached_head = entry.get("head")
+        cached_oid = entry.get("source_oid")
         cached = _churn_buckets_from_cache(entry.get("buckets"))
-        if isinstance(cached_head, str) and cached is not None:
-            if cached_head == head:
+        if isinstance(cached_oid, str) and cached is not None:
+            if cached_oid == source_oid:
                 return cached, "hit"
-            if is_ancestor(repo, cached_head, head):
+            if is_ancestor(repo, cached_oid, source_oid):
                 delta = collect_churn_by_period(
                     repo,
                     config,
+                    source_oid,
                     include_vendor=include_vendor,
-                    rev_range=f"{cached_head}..HEAD",
+                    rev_range=f"{cached_oid}..{source_oid}",
                     report_tz=report_tz,
                     include_docs=True,
                     period=period,
                 )
                 merged = merge_buckets(cached, delta)
-                repos_cache[key] = {"head": head, "buckets": _churn_buckets_to_cache(merged)}
+                repos_cache[key] = {"source_oid": source_oid, "buckets": _churn_buckets_to_cache(merged)}
                 return merged, "incremental"
 
     buckets = collect_churn_by_period(
         repo,
         config,
+        source_oid,
         include_vendor=include_vendor,
         report_tz=report_tz,
         include_docs=True,
         period=period,
     )
-    repos_cache[key] = {"head": head, "buckets": _churn_buckets_to_cache(buckets)}
+    repos_cache[key] = {"source_oid": source_oid, "buckets": _churn_buckets_to_cache(buckets)}
     return buckets, "miss"
 
 
@@ -1412,6 +1664,7 @@ HTML_TEMPLATE = """<!doctype html>
       <div class="pill">Generated __GENERATED_AT__</div>
     </div>
     <div class="sub">__SUBTITLE__</div>
+    __FETCH_NOTICE__
   </header>
 
   <div class="stats" id="stats"></div>
@@ -1861,16 +2114,26 @@ def build_report_data(report: ReportInput) -> dict[str, object]:
     )
     repositories = [
         {
-            "label": label,
-            "path": path,
-            "lines": lines,
-            "docs": docs,
-            "code": code,
-            "test": test,
-            "commit": commit,
+            "label": repo.label,
+            "path": repo.path,
+            "lines": repo.lines,
+            "docs": repo.docs,
+            "code": repo.code,
+            "test": repo.test,
+            "commit": repo.commit,
         }
-        for label, path, lines, docs, code, test, commit in report.repo_loc
+        for repo in report.repo_loc
     ]
+    scope_repositories = []
+    for repo in report.repo_loc:
+        item = {"label": repo.label, "path": repo.path, "commit": repo.commit}
+        if repo.source_oid is not None:
+            item.update({
+                "sourceRef": "origin/main",
+                "sourceOid": repo.source_oid,
+                "fetchOutcome": repo.fetch_outcome,
+            })
+        scope_repositories.append(item)
     document: dict[str, object] = {
         "schemaVersion": REPORT_SCHEMA_VERSION,
         "generatedAt": report.generated_at.isoformat(),
@@ -1883,10 +2146,7 @@ def build_report_data(report: ReportInput) -> dict[str, object]:
         "scope": {
             "includeVendor": report.include_vendor,
             "includeNonProduct": report.include_non_product,
-            "repositories": [
-                {"label": repo["label"], "path": repo["path"], "commit": repo["commit"]}
-                for repo in repositories
-            ],
+            "repositories": scope_repositories,
             "skipped": report.skipped_partition,
         },
         "period": {"kind": report.period, "labels": report.labels},
@@ -1977,6 +2237,7 @@ def _render_html(
     forecast_points_override: list[dict[str, int | str]] | None = None,
     forecast_months: int = FORECAST_MONTHS,
     forecast_slope_window_months: int = FORECAST_SLOPE_WINDOW_MONTHS,
+    fetch_notice: str | None = None,
 ) -> None:
     period_title = "Daily" if period == "day" else "Monthly"
     period_header = "Day" if period == "day" else "Month"
@@ -2139,6 +2400,9 @@ def _render_html(
         .replace("__CHANGE_HEADER__", f"{period_title} Change")
         .replace("__CURRENT_PERIOD_NOUN__", period.lower())
         .replace("__SUBTITLE__", escape(subtitle))
+        .replace("__FETCH_NOTICE__", (
+            f'<div class="sub" role="status">{escape(fetch_notice)}</div>' if fetch_notice else ""
+        ))
         .replace("__GENERATED_AT__", escape(generated_label))
         .replace("__COUNTING_NOTES__", notes)
     )
@@ -2156,6 +2420,14 @@ def write_html(path: Path, document: dict[str, object]) -> None:
     latest = document["latest"]
     forecast_points = document["forecast"]
     forecast_model = document.get("forecastModel", {})
+    fallback_count = sum(
+        repo.get("fetchOutcome") in ("failed", "timed_out", "budget_skipped")
+        for repo in scope["repositories"]
+    )
+    fetch_notice = (
+        f"{fallback_count} {'repository' if fallback_count == 1 else 'repositories'} using last-fetched origin/main"
+        if fallback_count else None
+    )
     _render_html(
         path,
         period["labels"],
@@ -2198,7 +2470,13 @@ def write_html(path: Path, document: dict[str, object]) -> None:
             "slopeWindowMonths",
             FORECAST_SLOPE_WINDOW_MONTHS,
         ),
+        fetch_notice=fetch_notice,
     )
+
+
+def collection_error(label: str, phase: str) -> int:
+    print(f"error: collection failed for {label} during {phase}", file=sys.stderr)
+    return 1
 
 
 def main() -> int:
@@ -2307,6 +2585,14 @@ def main() -> int:
     if args.workers < 1:
         print("error: workers must be >= 1", file=sys.stderr)
         return 1
+    fetch_started = time.monotonic()
+    repo_identities = [repository_identity(path) for _label, path in repos]
+    try:
+        source_entries = fetch_sources(repos, cache, identities=repo_identities)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    fetch_elapsed = time.monotonic() - fetch_started
     month_labels = period_labels(args.period, period_count, report_tz)
     period_header = "Days" if args.period == "day" else "Months"
 
@@ -2345,33 +2631,42 @@ def main() -> int:
     else:
         print("Counting: tracked source lines; documentation counted separately in parentheses; generated/minified/dependency/build/cache/scratch paths excluded")
     print(f"Cache: {cache_path if cache_path else 'disabled'}")
+    print("Source: origin/main")
+    print(f"Fetch: {fetch_elapsed:.2f}s")
+    for label, _path, oid, fetch_status in source_entries:
+        print(f"  {label}: {oid[:12]} ({fetch_status})")
+        if fetch_status != "fetched":
+            reason = {
+                "failed": "fetch failed",
+                "timed_out": "fetch timed out",
+                "budget_skipped": "fetch budget skipped",
+            }[fetch_status]
+            print(f"  warn: {reason} for {label}; using last-fetched origin/main", file=sys.stderr)
     print()
 
     # ------------------------------------------------------------------ churn
     print("Collecting churn from git log ...")
-    churn_all: dict[str, dict[str, dict[str, tuple[int, int]]]] = {}
+    churn_all: dict[int, dict[str, dict[str, tuple[int, int]]]] = {}
     churn_cache_counts = {
         "hit": 0,
         "incremental": 0,
         "miss": 0,
         "disabled": 0,
-        "error": 0,
     }
-    for label, path in repos:
+    for ri, (label, path, oid, _fetch_status) in enumerate(source_entries):
         try:
-            churn_all[label], status = collect_churn_cached(
-                label,
+            churn_all[ri], status = collect_churn_cached(
                 path,
                 config,
                 args.include_vendor,
                 cache,
                 report_tz,
                 args.period,
+                source_oid=oid,
+                repo_identity=repo_identities[ri],
             )
-        except RuntimeError as exc:
-            churn_all[label] = {}
-            status = "error"
-            print(f"  warn: churn failed for {label}: {exc}", file=sys.stderr)
+        except (RuntimeError, OSError):
+            return collection_error(label, "churn")
         churn_cache_counts[status] = churn_cache_counts.get(status, 0) + 1
     print(
         "  churn cache: "
@@ -2379,7 +2674,6 @@ def main() -> int:
         f"{churn_cache_counts.get('incremental', 0)} incremental, "
         f"{churn_cache_counts.get('miss', 0)} miss"
         + (f", {churn_cache_counts.get('disabled', 0)} disabled" if args.no_cache else "")
-        + (f", {churn_cache_counts['error']} error" if churn_cache_counts["error"] else "")
     )
     save_cache(cache_path, cache)
 
@@ -2390,18 +2684,26 @@ def main() -> int:
     snapshots: list[list[Snapshot | None]] = [[None] * len(repos) for _ in month_labels]
     snapshot_commits: list[list[str | None]] = [[None] * len(repos) for _ in month_labels]
     snapshot_cache_hits = 0
+    cutoff_cache_hits = 0
+    cutoff_lookups = 0
+    lookup_started = time.monotonic()
     for mi, period_label in enumerate(month_labels):
         cutoff = end_of_period_iso(period_label, args.period, report_tz)
-        for ri, (label, path) in enumerate(repos):
+        for ri, (label, path, oid, _fetch_status) in enumerate(source_entries):
             try:
-                commit = find_commit_at(path, cutoff)
-            except RuntimeError as exc:
-                print(f"  warn: snapshot lookup failed for {label}: {exc}", file=sys.stderr)
-                continue
+                commit, hit = cached_commit_at(
+                    path, cutoff, oid, repo_identities[ri], cache,
+                )
+            except (RuntimeError, OSError):
+                return collection_error(label, "snapshot lookup")
+            if hit:
+                cutoff_cache_hits += 1
+            else:
+                cutoff_lookups += 1
             if commit is None:
                 continue
             snapshot_commits[mi][ri] = commit
-            key = snapshot_cache_key(label, commit, config, args.include_vendor)
+            key = snapshot_cache_key(repo_identities[ri], commit, config, args.include_vendor)
             cached = (
                 snapshot_from_cache(cache.get("snapshots", {}).get(key))
                 if cache is not None else None
@@ -2412,8 +2714,10 @@ def main() -> int:
             else:
                 tasks.append((mi, ri, path, commit, key))
 
+    print(f"  {cutoff_cache_hits} cutoff cache hits, {cutoff_lookups} cutoff lookups ({time.monotonic() - lookup_started:.2f}s)")
     print(f"  {snapshot_cache_hits} snapshot cache hits")
     print(f"  {len(tasks)} snapshots to compute")
+    save_cache(cache_path, cache)
 
     if tasks and args.workers == 1:
         done_count = 0
@@ -2423,8 +2727,8 @@ def main() -> int:
                 snapshots[mi][ri] = snap
                 if cache is not None:
                     cache.setdefault("snapshots", {})[key] = snapshot_to_cache(snap)
-            except Exception as e:
-                print(f"  warn: snapshot failed for {repos[ri][0]}: {e}", file=sys.stderr)
+            except Exception:
+                return collection_error(repos[ri][0], "snapshot count")
             done_count += 1
             if done_count % 20 == 0 or done_count == len(tasks):
                 print(f"  {done_count}/{len(tasks)}", flush=True)
@@ -2446,8 +2750,8 @@ def main() -> int:
                     snapshots[mi][ri] = snap
                     if cache is not None:
                         cache.setdefault("snapshots", {})[key] = snapshot_to_cache(snap)
-                except Exception as e:
-                    print(f"  warn: snapshot failed for {repos[ri][0]}: {e}", file=sys.stderr)
+                except Exception:
+                    return collection_error(repos[ri][0], "snapshot count")
                 done_count += 1
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
@@ -2502,8 +2806,8 @@ def main() -> int:
         total_doc_deleted = 0
         month_added_by_kind = {kind: 0 for kind in SOURCE_KINDS}
         month_deleted_by_kind = {kind: 0 for kind in SOURCE_KINDS}
-        for label, _ in repos:
-            by_kind = churn_all[label].get(ym, {})
+        for ri in range(len(repos)):
+            by_kind = churn_all[ri].get(ym, {})
             for kind in SOURCE_KINDS:
                 added, deleted = by_kind.get(kind, (0, 0))
                 month_added_by_kind[kind] += added
@@ -2561,15 +2865,16 @@ def main() -> int:
     if html_path or args.json:
         latest_idx = len(month_labels) - 1
         by_lang: dict[str, int] = {}
-        repo_loc: list[tuple[str, str, int, int, int, int, str | None]] = []
+        repo_loc: list[RepositoryLOC] = []
         for ri, (label, repo_path) in enumerate(repos):
             snap = snapshots[latest_idx][ri]
+            oid, fetch_status = source_entries[ri][2:]
             if snap is None:
-                repo_loc.append((label, str(repo_path), 0, 0, 0, 0, None))
+                repo_loc.append(RepositoryLOC(label, str(repo_path), 0, 0, 0, 0, None, oid, fetch_status))
                 continue
             code_lines = snap.by_kind.get("code", 0)
             test_lines = snap.by_kind.get("test", 0)
-            repo_loc.append((
+            repo_loc.append(RepositoryLOC(
                 label,
                 str(repo_path),
                 snap.total,
@@ -2577,10 +2882,12 @@ def main() -> int:
                 code_lines,
                 test_lines,
                 snapshot_commits[latest_idx][ri],
+                oid,
+                fetch_status,
             ))
             for lang, n in snap.by_language.items():
                 by_lang[lang] = by_lang.get(lang, 0) + n
-        repo_loc.sort(key=lambda item: item[2], reverse=True)
+        repo_loc.sort(key=lambda item: item.lines, reverse=True)
         language_loc = sorted(by_lang.items(), key=lambda kv: kv[1], reverse=True)
 
         document = build_report_data(ReportInput(

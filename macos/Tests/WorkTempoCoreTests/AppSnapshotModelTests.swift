@@ -199,6 +199,55 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.netGrowth, 0)
     }
 
+    func testLastFetchedSourceNoticeSurvivesAggregateCoverageWarning() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: makeReportData()) as? [String: Any])
+        var scope = try XCTUnwrap(object["scope"] as? [String: Any])
+        var repositories = try XCTUnwrap(scope["repositories"] as? [[String: Any]])
+        repositories[0]["sourceRef"] = "origin/main"
+        repositories[0]["sourceOid"] = "abc123"
+        repositories[0]["fetchOutcome"] = "failed"
+        scope["repositories"] = repositories
+        object["scope"] = scope
+        let report = try ReportDocument.decode(data: JSONSerialization.data(withJSONObject: object))
+        let first = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
+        let second = try Workspace(root: URL(fileURLWithPath: "/tmp/other"))
+        let individual = DashboardSnapshot(
+            workspace: first,
+            report: report,
+            refreshState: .idle,
+            now: try generatedAt(report),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
+        )
+        XCTAssertEqual(individual.noticeMessage, "1 repository using last-fetched origin/main")
+
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [first: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+        let aggregate = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: try generatedAt(report),
+            maxWindowDays: 30
+        )
+        XCTAssertEqual(
+            aggregate.noticeMessage,
+            "1 of 2 workspaces contributing · 1 repository using last-fetched origin/main"
+        )
+        let failed = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .failed("collector unavailable"),
+            now: try generatedAt(report),
+            maxWindowDays: 30
+        )
+        XCTAssertEqual(failed.errorMessage, "collector unavailable")
+        XCTAssertEqual(failed.noticeMessage, aggregate.noticeMessage)
+    }
+
     func testPartialPortfolioUsesNoticeChannel() throws {
         let first = try Workspace(root: URL(fileURLWithPath: "/tmp/first"))
         let second = try Workspace(root: URL(fileURLWithPath: "/tmp/second"))

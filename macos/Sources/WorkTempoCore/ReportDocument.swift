@@ -36,6 +36,23 @@ public struct ReportDocument: Decodable, Sendable {
         String(generatedAt.prefix(10))
     }
 
+    public var lastFetchedRepositoryCount: Int {
+        scope.repositories.filter { repository in
+            repository.fetchOutcome == "failed"
+                || repository.fetchOutcome == "timed_out"
+                || repository.fetchOutcome == "budget_skipped"
+        }.count
+    }
+
+    public var fetchWarning: String? {
+        Self.fallbackNotice(repositoryCount: lastFetchedRepositoryCount)
+    }
+
+    public static func fallbackNotice(repositoryCount: Int) -> String? {
+        guard repositoryCount > 0 else { return nil }
+        return "\(repositoryCount) \(repositoryCount == 1 ? "repository" : "repositories") using last-fetched origin/main"
+    }
+
     public static func decode(data: Data) throws -> ReportDocument {
         let document = try JSONDecoder().decode(ReportDocument.self, from: data)
         guard document.schemaVersion == 1 else {
@@ -95,6 +112,9 @@ public struct RepositoryReport: Decodable, Sendable {
     public let label: String
     public let path: String
     public let commit: String?
+    public let sourceRef: String?
+    public let sourceOid: String?
+    public let fetchOutcome: String?
 }
 
 public struct WorkspaceReport: Decodable, Sendable {

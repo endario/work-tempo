@@ -36,11 +36,13 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-Then run it from any Git repository:
+Then run it from a Git repository whose counted repositories have `origin/main`:
 
 ```bash
 work-tempo
 ```
+
+Within its fetch budget, each run attempts remote `main` for counted repositories (workspace root, initialized submodules, and configured extras). A repository skipped by that budget, or whose fetch fails, uses its last-fetched `origin/main` and marks the report; the collector never substitutes the checked-out branch. A local-only or `master`-default workspace needs an `origin/main` tracking ref. Counted submodules and extra repositories without one must acquire that ref or be excluded from the counting scope. Fetches run up to four at a time, bounded to 8 seconds per repository and 45 seconds per workspace.
 
 The current directory is the default workspace. Analyze another checkout with:
 
@@ -120,9 +122,9 @@ Only actual Git repository roots are counted. Missing or uninitialized configure
 
 ## Counting Model
 
-LOC snapshots count newline-delimited tracked source files from the last commit available at each period cutoff. Source and tests are separated using conventional test directories and test/spec/e2e filename patterns.
+LOC snapshots count newline-delimited tracked source files from the last `origin/main` commit available at each period cutoff. Source and tests are separated using conventional test directories and test/spec/e2e filename patterns.
 
-Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same current counting policy. Blank lines and comments count because WorkTempo measures physical source lines rather than semantic SLOC.
+Churn is added plus deleted lines from non-merge commits reachable from the captured `origin/main` tip, grouped by author date and filtered through the same current counting policy. Blank lines and comments count because WorkTempo measures physical source lines rather than semantic SLOC.
 
 Generated, minified, dependency, build, cache, scratch, and vendor-like paths are excluded by default. Documentation is counted separately and does not contribute to source LOC, growth, or churn metrics.
 
@@ -147,7 +149,7 @@ work-tempo --no-cache
 work-tempo --cache /tmp/work-tempo-cache.json
 ```
 
-Snapshot cache entries include the commit and effective counting policy. Churn entries also include period kind and timezone. Rewritten history triggers a full churn rescan.
+Snapshot cache entries include repository identity, commit, and effective counting policy. Churn entries also include period kind and timezone. Rewritten `origin/main` history triggers a full churn rescan. Cutoff commits are cached by repository identity, source tip, and exact cutoff time. Cache schema 5 starts cold once after this upgrade because earlier label-based entries cannot prove which checkout produced them; interrupted snapshot counting resumes from its checkpoints.
 
 ## JSON Compatibility
 
