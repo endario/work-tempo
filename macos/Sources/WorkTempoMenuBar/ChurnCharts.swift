@@ -258,6 +258,7 @@ struct MonthlyChurnChart: View {
         }
         .frame(height: 116)
         .accessibilityLabel("Monthly code, test, and documentation additions and removals")
+        .accessibilityChartDescriptor(MonthlyChartDescriptor(timeline: timeline))
     }
 
     private func hoverRows(_ index: Int) -> [HoverRow] {
