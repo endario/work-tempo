@@ -4,7 +4,7 @@ import XCTest
 
 final class WorkspaceControllerTests: XCTestCase {
     func testLegacyStateAndAddingWorkspaceKeepAllScope() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         try fixture.store.save(WorkspaceState(
             roots: [fixture.first.root.path],
             selectedRoot: fixture.first.root.path,
@@ -29,7 +29,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testLoadDeduplicatesCanonicalWorkspaceRoots() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         try fixture.store.save(WorkspaceState(roots: [
             fixture.first.root.path,
             fixture.first.root.appending(path: ".").path,
@@ -41,7 +41,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testLoadReadsCachedReportsAndSelectionPersists() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         let report = try ReportDocument.decode(data: makeReportData(loc: Array(repeating: 321, count: 61)))
         try makeReportData(loc: Array(repeating: 321, count: 61))
             .write(to: fixture.store.reportURL(for: fixture.second))
@@ -62,7 +62,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testAllAndWorkspaceScopesRoundTrip() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         try fixture.store.save(WorkspaceState(
             roots: [fixture.first.root.path],
             selectedRoot: fixture.first.root.path,
@@ -81,7 +81,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testRemovingSelectedWorkspaceReturnsToAggregate() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()
         _ = try await controller.add(root: fixture.first.root)
@@ -95,7 +95,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testRemoveDeletesCachedReportBeforeWorkspaceCanBeReadded() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         let reportURL = fixture.store.reportURL(for: fixture.first)
         try makeReportData(loc: Array(repeating: 777, count: 61)).write(to: reportURL)
         try fixture.store.save(WorkspaceState(
@@ -115,7 +115,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testRefreshFailureKeepsPriorReport() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         let existing = try ReportDocument.decode(data: makeReportData(loc: Array(repeating: 777, count: 61)))
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()
@@ -137,7 +137,7 @@ final class WorkspaceControllerTests: XCTestCase {
     }
 
     func testLateCompletionCannotReplaceNewSelection() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(self)
         let controller = WorkspaceController(store: fixture.store)
         _ = try await controller.load()
         _ = try await controller.add(root: fixture.first.root)
@@ -161,8 +161,10 @@ private struct Fixture {
     let first: Workspace
     let second: Workspace
 
-    init() throws {
-        base = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    init(_ test: XCTestCase) throws {
+        let base = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        test.addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        self.base = base
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         store = WorkspaceStore(baseDirectory: base.appending(path: "Support"))
         first = try Workspace(root: base.appending(path: "first"))
