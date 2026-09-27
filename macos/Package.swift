@@ -16,5 +16,6 @@ let package = Package(
             dependencies: ["WorkTempoCore"]
         ),
         .testTarget(name: "WorkTempoCoreTests", dependencies: ["WorkTempoCore"]),
+        .testTarget(name: "WorkTempoMenuBarTests", dependencies: ["WorkTempoMenuBar", "WorkTempoCore"]),
     ]
 )
