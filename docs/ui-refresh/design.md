@@ -6,7 +6,7 @@ Status: critic cap reached — decompose: accessible chart pilot, then visual re
 
 A person opening the popover should identify **what changed per day, over which days, and whether the current view is all workspaces or one** before reading the charts. In the user-supplied dark screenshot, the two large figures have only `/ DAY` and `/ 30D` as visible labels, four additional large totals compete with them, and the monthly legend requires decoding six keys across a narrow row. The screenshot was supplied in conversation, not checked into this public repository because it contains the user's local metrics.
 
-The collector, metric definitions, snapshot's public `metrics` array, menu-bar value, refresh lifecycle, and Settings window stay unchanged. The change is presentation only. The width remains 430 points. The user chose to keep both charts stacked: the popover grows to the scroll content's natural height when the display permits and caps its height to preserve the fixed header/footer on shorter screens; excess content scrolls.
+The collector, metric definitions, snapshot's public `metrics` array, menu-bar value, refresh lifecycle, and Settings window stay unchanged. The width remains 430 points. The user chose to keep both charts stacked: the popover grows to the scroll content's natural height when the display permits and caps its height to preserve the fixed header/footer on shorter screens; excess content scrolls.
 
 ## Choice and alternatives
 
