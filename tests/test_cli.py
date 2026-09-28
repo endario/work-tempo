@@ -356,6 +356,19 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([label for label, _path in repos], ["(parent)", "modules/core"])
         self.assertEqual(skipped, [])
 
+    def test_list_repos_deduplicates_submodule_symlink_alias(self) -> None:
+        tempo = load_script("tempo_submodule_symlink_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            submodule = root / "modules" / "core"
+            submodule.mkdir(parents=True)
+            make_tracked_repo(submodule)
+            (root / "alias").symlink_to(submodule, target_is_directory=True)
+            with mock.patch.object(tempo, "gitmodule_paths", return_value=["modules/core", "alias"]):
+                repos, skipped = tempo.list_repos(root, tempo.default_config())
+            self.assertEqual(repos, [("(parent)", root), ("modules/core", submodule)])
+            self.assertEqual(skipped, [])
+
     def test_list_repos_keeps_distinct_worktrees_with_shared_label(self) -> None:
         tempo = load_script("tempo_worktree_dedup_test", "src/work_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:

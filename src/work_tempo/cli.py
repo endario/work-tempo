@@ -938,9 +938,9 @@ def list_repos(
         ), None)
         if full is None:
             skipped.append(label)
-        elif full not in seen_paths:
+        elif full.resolve() not in seen_paths:
             repos.append((label, full))
-            seen_paths.add(full)
+            seen_paths.add(full.resolve())
     return repos, skipped
 
 
