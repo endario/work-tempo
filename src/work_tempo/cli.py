@@ -913,6 +913,7 @@ def list_repos(
 ) -> tuple[list[tuple[str, Path]], list[str]]:
     """Return (label, path) for the parent repo, usable submodules, and configured extra repos."""
     repos: list[tuple[str, Path]] = [("(parent)", root)]
+    seen_paths = {root.resolve()}
     skipped: list[str] = []
     for sub_path in gitmodule_paths(root):
         if not include_vendor and any(part in config.exclude_dirs for part in path_parts(sub_path)):
@@ -925,7 +926,10 @@ def list_repos(
         if not full.is_dir() or not is_repo_root(full):
             skipped.append(sub_path)
             continue
-        repos.append((sub_path, full))
+        resolved = full.resolve()
+        if resolved not in seen_paths:
+            repos.append((sub_path, full))
+            seen_paths.add(resolved)
     for repo in config.extra_repos:
         label = repo["label"]
         full = next((
@@ -934,8 +938,9 @@ def list_repos(
         ), None)
         if full is None:
             skipped.append(label)
-        else:
+        elif full.resolve() not in seen_paths:
             repos.append((label, full))
+            seen_paths.add(full.resolve())
     return repos, skipped
 
 
