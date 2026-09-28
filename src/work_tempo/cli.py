@@ -910,11 +910,12 @@ def list_repos(
     config: Config,
     include_vendor: bool = False,
     include_non_product: bool = False,
-) -> tuple[list[tuple[str, Path]], list[str]]:
-    """Return (label, path) for the parent repo, usable submodules, and configured extra repos."""
+) -> tuple[list[tuple[str, Path]], list[str], int]:
+    """Return counted repositories, skipped labels, and the counted extra-repo total."""
     repos: list[tuple[str, Path]] = [("(parent)", root)]
     seen_paths = {root.resolve()}
     skipped: list[str] = []
+    extra_count = 0
     for sub_path in gitmodule_paths(root):
         if not include_vendor and any(part in config.exclude_dirs for part in path_parts(sub_path)):
             skipped.append(sub_path)
@@ -941,7 +942,8 @@ def list_repos(
         elif full.resolve() not in seen_paths:
             repos.append((label, full))
             seen_paths.add(full.resolve())
-    return repos, skipped
+            extra_count += 1
+    return repos, skipped, extra_count
 
 
 def partition_skipped_repos(root: Path, config: Config, skipped_repos: list[str]) -> dict[str, list[str]]:
@@ -2576,7 +2578,7 @@ def main() -> int:
         cache_path.unlink()
     cache = None if args.no_cache else load_cache(cache_path)
 
-    repos, skipped_repos = list_repos(
+    repos, skipped_repos, extra_count = list_repos(
         root,
         config,
         include_vendor=args.include_vendor,
@@ -2606,10 +2608,7 @@ def main() -> int:
         print(f"Config: {', '.join(str(path) for path, _layer in config_layers)}")
     else:
         print("Config: built-in defaults")
-    counted_labels = {label for label, _path in repos}
-    extra_labels = {repo["label"] for repo in config.extra_repos}
-    extra_count = len(counted_labels & extra_labels)
-    submodule_count = max(0, len(repos) - 1 - extra_count)
+    submodule_count = len(repos) - 1 - extra_count
     repo_parts = ["parent", f"{submodule_count} submodules"]
     if extra_count:
         repo_parts.append(f"{extra_count} extra {'repo' if extra_count == 1 else 'repos'}")
