@@ -51,6 +51,14 @@ jobs:
           for artifact in dist/*.whl dist/*.tar.gz; do
             python -m venv "$RUNNER_TEMP/venv"
             "$RUNNER_TEMP/venv/bin/pip" install --quiet "$artifact"
+            "$RUNNER_TEMP/venv/bin/python" - <<'PY'
+          from importlib.metadata import distribution
+
+          package = distribution("work-tempo")
+          assert package.metadata["License-Expression"] == "MIT"
+          license_file = next(path for path in package.files if str(path).endswith(".dist-info/licenses/LICENSE"))
+          assert license_file.locate().read_text().startswith("MIT License")
+          PY
             work="$(mktemp -d)"
             git init --quiet "$work"
             "$RUNNER_TEMP/venv/bin/work-tempo" --root "$work" --init-config
