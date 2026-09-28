@@ -356,6 +356,37 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertEqual([label for label, _path in repos], ["(parent)", "modules/core"])
         self.assertEqual(skipped, [])
 
+    def test_list_repos_keeps_distinct_worktrees_with_shared_label(self) -> None:
+        tempo = load_script("tempo_worktree_dedup_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            make_tracked_repo(root)
+            other = Path(tmp) / "branch"
+            subprocess.run(["git", "worktree", "add", "-b", "branch", str(other)],
+                           cwd=root, check=True, capture_output=True)
+            config = dataclasses.replace(tempo.default_config(), extra_repos=(
+                {"label": "shared", "path": "."},
+                {"label": "shared", "path": "../branch"},
+            ))
+            repos, skipped = tempo.list_repos(root, config)
+            self.assertEqual(repos, [("(parent)", root), ("shared", other.resolve())])
+            self.assertEqual(skipped, [])
+
+    def test_list_repos_keeps_first_submodule_label_for_extra_alias(self) -> None:
+        tempo = load_script("tempo_submodule_dedup_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            submodule = root / "modules" / "core"
+            submodule.mkdir(parents=True)
+            make_tracked_repo(submodule)
+            config = dataclasses.replace(tempo.default_config(), extra_repos=(
+                {"label": "alias", "path": "modules/core"},
+            ))
+            with mock.patch.object(tempo, "gitmodule_paths", return_value=["modules/core"]):
+                repos, skipped = tempo.list_repos(root, config)
+            self.assertEqual(repos, [("(parent)", root), ("modules/core", submodule)])
+            self.assertEqual(skipped, [])
+
     def test_list_repos_skips_missing_gitmodules_path(self) -> None:
         tempo = load_script("tempo_missing_gitmodules_path_test", "src/work_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
@@ -1307,34 +1338,34 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertTrue(kill_group.called)
         self.assertEqual(tempo._active_fetches, set())
 
-    def test_duplicate_checkout_entries_keep_each_captured_source_oid(self) -> None:
+    def test_duplicate_checkout_is_fetched_and_counted_once(self) -> None:
         tempo = load_script("tempo_duplicate_path_provenance_test", "src/work_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp).resolve()
+            root = Path(tmp).resolve() / "workspace"
             make_tracked_repo(root)
-            first_oid = tempo.source_oid(root)
-            (root / "main.py").write_text("VALUE = 1\nSECOND = 2\n", encoding="utf-8")
-            subprocess.run(["git", "add", "main.py"], cwd=root, check=True)
-            subprocess.run(["git", "commit", "-m", "second"], cwd=root, check=True, capture_output=True)
-            second_oid = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            oid = tempo.source_oid(root)
             (root / tempo.LOCAL_CONFIG_FILENAME).write_text(
-                json.dumps({"extra_repos": [{"label": "again", "path": "."}]}), encoding="utf-8",
+                json.dumps({"extra_repos": [
+                    {"label": "again", "path": "."},
+                    {"label": "alias", "path": "../alias"},
+                ]}), encoding="utf-8",
             )
+            (root.parent / "alias").symlink_to(root, target_is_directory=True)
             output = root / "report.json"
             argv = ["work-tempo", "--root", str(root), "--period", "day", "--days", "1",
                     "--workers", "1", "--no-cache", "--no-html", "--no-languages",
                     "--json", str(output)]
-            entries = [("(parent)", root, first_oid, "failed"), ("again", root, second_oid, "fetched")]
             with (mock.patch.object(sys, "argv", argv),
                   mock.patch.object(sys, "stderr", io.StringIO()),
-                  mock.patch.object(tempo, "fetch_sources", return_value=entries),
+                  mock.patch.object(tempo, "fetch_source", return_value="failed") as fetch,
                   redirect_stdout(io.StringIO())):
                 self.assertEqual(tempo.main(), 0)
-            scope = json.loads(output.read_text(encoding="utf-8"))["scope"]["repositories"]
-            self.assertEqual({item["label"]: item["sourceOid"] for item in scope},
-                             {"(parent)": first_oid, "again": second_oid})
-            self.assertEqual({item["label"]: item["fetchOutcome"] for item in scope},
-                             {"(parent)": "failed", "again": "fetched"})
+            fetch.assert_called_once_with(root, mock.ANY)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual([item["label"] for item in report["scope"]["repositories"]], ["(parent)"])
+            self.assertEqual(report["scope"]["repositories"][0]["sourceOid"], oid)
+            self.assertEqual(report["series"]["loc"], [1])
+            self.assertEqual(report["series"]["churn"], [1])
 
     def test_html_header_shows_last_fetched_source_warning(self) -> None:
         tempo = load_script("tempo_html_fetch_warning_test", "src/work_tempo/cli.py")
