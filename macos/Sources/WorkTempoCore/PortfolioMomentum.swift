@@ -184,7 +184,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
     public let totals: PortfolioTotals
     public let watermark: String?
     public let generatedAt: String?
-    public let warning: String?
+    public let coverageWarning: String?
+    public let fallbackNotice: String?
     public let momentum: AlignedMomentum?
     public let chart: ChartTimeline?
     public let historyState: PortfolioHistoryState
@@ -228,11 +229,7 @@ public struct PortfolioMomentum: Equatable, Sendable {
             ? nil
             : "\(contributors.count) of \(workspaces.count) workspaces contributing"
         let fallbackCount = contributors.reduce(0) { $0 + $1.1.lastFetchedRepositoryCount }
-        let warningParts = [
-            coverageWarning,
-            ReportDocument.fallbackNotice(repositoryCount: fallbackCount),
-        ].compactMap { $0 }
-        let warning = warningParts.isEmpty ? nil : warningParts.joined(separator: " · ")
+        let fallbackNotice = ReportDocument.fallbackNotice(repositoryCount: fallbackCount)
 
         guard !contributors.isEmpty else {
             return .success(PortfolioMomentum(
@@ -241,7 +238,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
                 totals: totals,
                 watermark: nil,
                 generatedAt: nil,
-                warning: warning,
+                coverageWarning: coverageWarning,
+                fallbackNotice: fallbackNotice,
                 momentum: nil,
                 chart: nil,
                 historyState: .extending(current: 0, required: historyWindow.chartClosedDays)
@@ -270,7 +268,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
             totals: totals,
             watermark: commonClosed.last,
             generatedAt: contributors.map { $0.1.generatedAt }.min(),
-            warning: warning,
+            coverageWarning: coverageWarning,
+            fallbackNotice: fallbackNotice,
             momentum: aligned,
             chart: chart,
             historyState: commonClosed.count >= historyWindow.chartClosedDays

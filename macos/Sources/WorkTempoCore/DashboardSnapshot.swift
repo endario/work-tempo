@@ -33,6 +33,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let dataState: SnapshotDataState
     public let isRefreshing: Bool
     public let errorMessage: String?
+    public let coverageMessage: String?
     public let noticeMessage: String?
     public let menuValue: String
     public let menuAccessibilityLabel: String
@@ -68,6 +69,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else {
             errorMessage = nil
         }
+        coverageMessage = nil
         noticeMessage = report?.fetchWarning
 
         guard let report else {
@@ -148,7 +150,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
         } else {
             errorMessage = nil
         }
-        noticeMessage = portfolio.warning
+        coverageMessage = portfolio.coverageWarning
+        noticeMessage = portfolio.fallbackNotice
 
         let summary = portfolio.momentum?.summary
         let stale = reportGeneratedAt.map { now.timeIntervalSince($0) > 86_400 } ?? true

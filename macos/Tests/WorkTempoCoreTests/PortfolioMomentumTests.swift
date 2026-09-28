@@ -70,7 +70,8 @@ final class PortfolioMomentumTests: XCTestCase {
 
         XCTAssertEqual(portfolio.contributorCount, 1)
         XCTAssertEqual(portfolio.totals.source, 200)
-        XCTAssertEqual(portfolio.warning, "1 of 2 workspaces contributing")
+        XCTAssertEqual(portfolio.coverageWarning, "1 of 2 workspaces contributing")
+        XCTAssertNil(portfolio.fallbackNotice)
         XCTAssertEqual(portfolio.momentum?.summary.dailyChurn, 2)
     }
 

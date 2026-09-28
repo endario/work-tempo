@@ -45,7 +45,7 @@
 **Interfaces:** Use `snapshot.metrics` by ids `source`, `code`, `tests`, `docs`; no Core type changes. `workspaceMenu` yields flexible bounded text with `.truncationMode(.middle)` and `.help` of the selected full display name. Header icon buttons retain callbacks and receive `.accessibilityLabel(help)`; remove `.focusable(false)`.
 
 - **Step 1: Establish failure cases.** Check an exceptionally long workspace display name in the debug view and tab navigation through Refresh, Settings, and Add; note baseline clipping or skipped focus.
-- **Step 2: Rebalance header width.** Keep the title and action buttons at intrinsic sizes; allow only the workspace chooser to compress. Keep `Updated …` visible, move report notices behind an info button after the chooser, and retain error and refresh-progress banners in content.
+- **Step 2: Rebalance header width.** Keep the title and action buttons at intrinsic sizes; allow only the workspace chooser to compress. Keep `Updated …` visible, move fetch-fallback notices behind an info button after the chooser, and retain partial-coverage, error, and refresh-progress banners in content.
 - **Step 3: Replace the metric card.** Render source as an aggregate with Code + Tests grouped underneath or alongside it; put Docs on its own line. Present numerals in primary text ink and small color keys only where they map to charts. Use the existing metrics' `--` and labels. Do not perform arithmetic on compact formatted strings.
 - **Step 4: Check focus and layout.** Verify mouse and keyboard activations, All versus individual scope, refresh/partial/error labels, footer, and the headline hover overlay across the summary. At 430pt measure rendered header and summary ink extents in both appearances. Build and run Swift tests.
 

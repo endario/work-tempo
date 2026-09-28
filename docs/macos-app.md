@@ -80,7 +80,7 @@ The composition summary shows the latest source LOC with its code and test compo
 
 ## Aggregation
 
-All Workspaces sums per-workspace reports on a shared grid. One cohort governs the whole screen: every tracked workspace with a valid report. Totals, headline rate, and both charts use exactly that cohort; when some reports are missing the header's info button reveals `N of M workspaces` rather than silently using a different subset.
+All Workspaces sums per-workspace reports on a shared grid. One cohort governs the whole screen: every tracked workspace with a valid report. Totals, headline rate, and both charts use exactly that cohort; when some reports are missing, a visible banner says `N of M workspaces contributing` rather than silently using a different subset. Fetch-fallback details remain in the header's info popover.
 
 Two guards refuse to sum rather than produce a wrong number:
 
@@ -99,7 +99,7 @@ Individual and aggregate views share one metric input (`MomentumInput`); aggrega
 
 A 430-point popover keeps its header and footer fixed. The middle grows to fit its content up to the display's visible height with room for those controls; on shorter screens, the middle scrolls.
 
-1. Header: scope menu (All Workspaces and each workspace), an info button for report notices when present, last refresh, refresh, Settings, and add-workspace. Long workspace names truncate in the header and remain available in the menu and tooltip.
+1. Header: scope menu (All Workspaces and each workspace), an info button for fetch-fallback notices when present, last refresh, refresh, Settings, and add-workspace. Long workspace names truncate in the header and remain available in the menu and tooltip.
 2. Hero: labeled source churn per day and net source LOC change over the same closed-day window, each with a sparkline. Net change uses neutral ink because growth is not a quality verdict. The open day appears as a faded trailing segment marked to-date.
 3. Composition: latest source LOC alongside its code and test components; documentation LOC appears on its own line.
 4. **Lines over time** chart: day-end code and test lines stacked above the axis, documentation below it under a dashed guide. Documentation uses the lower half to separate it from source, not as a negative source count. The chart stacks by kind, not language, because reports carry no per-language series. Its legend sits below the chart.

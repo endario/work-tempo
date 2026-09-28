@@ -125,8 +125,11 @@ struct DashboardView: View {
                 if let message = model.snapshot.errorMessage {
                     errorBanner(message)
                 }
+                if let message = model.snapshot.coverageMessage {
+                    statusBanner(message, symbol: "info.circle.fill", opticalOffset: 1.5)
+                }
                 if let progress = model.refreshProgress {
-                    statusBanner(progress)
+                    statusBanner(progress, symbol: "arrow.trianglehead.2.clockwise.rotate.90", opticalOffset: 0.75)
                 }
                 // The sparkline readouts hang below their 24-point plots, over
                 // the metric row that follows them in this stack.
@@ -187,7 +190,7 @@ struct DashboardView: View {
                     sectionRule
                     chartTitle(
                         "LINES OVER TIME",
-                        help: "Day-end code and test lines stacked as source; documentation appears below the axis"
+                        help: "Day-end code and test lines stacked as source; docs are drawn below zero for distinction, with actual counts in the hover readout"
                     )
                     SourceVolumeChart(timeline: chart)
                     kindLegend
@@ -197,7 +200,7 @@ struct DashboardView: View {
                     sectionRule
                     chartTitle(
                         "MONTHLY ACTIVITY",
-                        help: "Code and test lines added and removed per calendar month; documentation appears below the axis"
+                        help: "Code and test lines added and removed per calendar month; docs are drawn below zero for distinction, with actual counts in the hover readout"
                     )
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
@@ -230,7 +233,6 @@ struct DashboardView: View {
             Spacer()
             Button("Quit Work Tempo", action: onQuit)
                 .keyboardShortcut("q")
-                // Compare against the adjacent icon-and-text button's ink at 2x.
                 .offset(y: -0.75)
         }
         .buttonStyle(.plain)
@@ -256,7 +258,6 @@ struct DashboardView: View {
         .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
-        // Symbols lack a text baseline; compare their ink against the title at 2x.
         .offset(y: opticalOffset)
         .help(help)
     }
@@ -296,7 +297,6 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
-                // Symbols lack text baselines; compare against single-line caption ink at 2x.
                 .offset(y: 0.75)
             Text(message)
                 .font(.caption)
@@ -308,12 +308,11 @@ struct DashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    private func statusBanner(_ message: String) -> some View {
+    private func statusBanner(_ message: String, symbol: String, opticalOffset: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+            Image(systemName: symbol)
                 .foregroundStyle(.secondary)
-                // Compare this symbol against the progress caption's ink at 2x.
-                .offset(y: 0.75)
+                .offset(y: opticalOffset)
             Text(message)
                 .font(.caption)
             Spacer()
