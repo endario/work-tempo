@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var dashboardContentHeight: CGFloat = 445
+    @ScaledMetric(relativeTo: .caption2) private var legendFontSize: CGFloat = 10
     let onRefresh: () -> Void
     let onAdd: () -> Void
     let onRemove: () -> Void
@@ -31,13 +32,14 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
+            // Optical offsets below align rendered ink at 2x; remeasure if header fonts change.
             Text("Work Tempo")
                 .font(.system(size: 15, weight: .semibold))
                 .fixedSize()
+                .offset(y: 0.75)
             if !model.workspaces.isEmpty {
-                // The chevron-backed menu's synthetic baseline leaves its label high;
-                // measured against the 15-point title and 14-point scope at 2x.
-                workspaceMenu.offset(y: 2)
+                // The chevron-backed menu has no shared ink center with the text row.
+                workspaceMenu.offset(y: 1.75)
             }
             Spacer()
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -46,16 +48,18 @@ struct DashboardView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
+                        .offset(y: -0.25)
                 }
                 actionButton(
                     model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
+                    opticalOffset: model.snapshot.isRefreshing ? 1.5 : 2,
                     help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
                     action: onRefresh
                 )
                     .disabled(model.workspaces.isEmpty)
             }
-            actionButton("gearshape", help: "Settings", action: openSettingsWindow)
-            actionButton("plus", help: "Add workspace", action: onAdd)
+            actionButton("gearshape", opticalOffset: 1.25, help: "Settings", action: openSettingsWindow)
+            actionButton("plus", opticalOffset: 1.25, help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -157,7 +161,7 @@ struct DashboardView: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
-        .overlay(alignment: .top) { Divider() }
+        .overlay(alignment: .top) { sectionRule }
     }
 
     private func metricValue(_ id: String) -> String {
@@ -168,13 +172,15 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
+                    sectionRule
                     HStack(alignment: .firstTextBaseline) {
                         chartTitle(
                             "SOURCE LINES OVER TIME",
                             help: "Day-end code and test lines stacked as source; documentation is counted separately, below the axis"
                         )
                         Spacer()
-                        kindLegend
+                        // Caption-sized legend ink sits low against the larger title at 2x.
+                        kindLegend.offset(y: -0.5)
                     }
                     SourceVolumeChart(timeline: chart)
                     Text("Docs use the space below zero for separation")
@@ -182,15 +188,18 @@ struct DashboardView: View {
                         .foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading, spacing: 4) {
+                    sectionRule
                     HStack(alignment: .firstTextBaseline) {
                         chartTitle(
                             "MONTHLY ACTIVITY",
                             help: "Code and test lines added and removed per calendar month; documentation is counted separately, below the axis"
                         )
                         Spacer()
-                        Text("Docs separate · added + removed, not net")
+                        Text("Docs separate · + added / - removed · not net")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
+                            // Match the title's ink center across mixed caption sizes at 2x.
+                            .offset(y: -0.75)
                     }
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
@@ -223,6 +232,8 @@ struct DashboardView: View {
             Spacer()
             Button("Quit Work Tempo", action: onQuit)
                 .keyboardShortcut("q")
+                // Descenders shift this control's ink below Remove's center at 2x.
+                .offset(y: -0.75)
         }
         .buttonStyle(.plain)
         .font(.caption)
@@ -231,7 +242,12 @@ struct DashboardView: View {
         .padding(.vertical, 12)
     }
 
-    private func actionButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(
+        _ symbol: String,
+        opticalOffset: CGFloat,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
@@ -243,7 +259,7 @@ struct DashboardView: View {
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
         // SF Symbols have no text baseline; align their ink with the header labels.
-        .offset(y: 1)
+        .offset(y: opticalOffset)
         .help(help)
     }
 
@@ -256,34 +272,34 @@ struct DashboardView: View {
     }
 
     private var changeLegend: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
-            GridRow {
-                legend("Code added", swatch: TempoPalette.codeAdded)
-                legend("Tests added", swatch: TempoPalette.testAdded)
-                legend("Docs added", swatch: TempoPalette.docsAdded)
-            }
-            GridRow {
-                legend("Code removed", swatch: TempoPalette.codeDeleted)
-                legend("Tests removed", swatch: TempoPalette.testDeleted)
-                legend("Docs removed", swatch: TempoPalette.docsDeleted)
-            }
+        HStack(spacing: 10) {
+            legend("Code +", swatch: TempoPalette.codeAdded, spoken: "Code added")
+            legend("Code -", swatch: TempoPalette.codeDeleted, spoken: "Code removed")
+            legend("Tests +", swatch: TempoPalette.testAdded, spoken: "Tests added")
+            legend("Tests -", swatch: TempoPalette.testDeleted, spoken: "Tests removed")
+            legend("Docs +", swatch: TempoPalette.docsAdded, spoken: "Docs added")
+            legend("Docs -", swatch: TempoPalette.docsDeleted, spoken: "Docs removed")
         }
     }
 
     // Identity rides the swatch; the label stays in text ink so caption-sized
     // legend text is not asked to clear contrast on a series color.
-    private func legend(_ label: String, swatch: Color) -> some View {
+    private func legend(_ label: String, swatch: Color, spoken: String? = nil) -> some View {
         HStack(spacing: 4) {
             Circle().fill(swatch).frame(width: 6, height: 6)
             Text(label).foregroundStyle(.secondary)
         }
-        .font(.caption2)
+        .font(.system(size: legendFontSize, weight: .medium))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken ?? label)
     }
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
+                // Measured against single-line error copy at 2x; remeasure if the font or symbol changes.
+                .offset(y: 0.75)
             Text(message)
                 .font(.caption)
                 .lineLimit(3)
@@ -298,6 +314,8 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: symbol)
                 .foregroundStyle(.secondary)
+                // These symbols need different optical offsets against caption text at 2x.
+                .offset(y: symbol == "info.circle.fill" ? 1.5 : 0.75)
             Text(message)
                 .font(.caption)
             Spacer()
@@ -305,6 +323,17 @@ struct DashboardView: View {
         .padding(9)
         .background(Color.secondary.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var sectionRule: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: [Color.primary.opacity(0.22), Color.primary.opacity(0.02)],
+                startPoint: .leading,
+                endPoint: .trailing
+            ))
+            .frame(height: 1.5)
+            .accessibilityHidden(true)
     }
 
     private func chartTitle(_ title: String, help: String) -> some View {
