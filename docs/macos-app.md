@@ -38,7 +38,7 @@ A workspace is identified by its canonical Git root, and the same root cannot be
 - `workspaces.json`: schema version 1, ordered roots, the selected scope (`selectedScope`: `all` or a root path), and `selectedRoot` for older readers. Written atomically. State without `selectedScope` opens on All Workspaces.
 - `Reports/<digest of root>.json`: the last successful raw report for each workspace.
 
-In memory the scope is a `DisplayScope` enum, `all` or `workspace(Workspace)`. Removing a workspace never touches its repository, and All Workspaces cannot be removed.
+In memory the scope is a `DisplayScope` enum, `all` or `workspace(Workspace)`. After confirmation, removing a workspace deletes its saved report but not its repository; All Workspaces cannot be removed.
 
 ## Collection
 
@@ -103,8 +103,8 @@ A 430-point popover keeps its header and footer fixed. The middle grows to fit i
 2. Hero: labeled source churn per day and net source LOC change over the same closed-day window, each with a sparkline. Net change uses neutral ink because growth is not a quality verdict. The open day appears as a faded trailing segment marked to-date.
 3. Composition: latest source LOC alongside its code and test components; documentation LOC appears on its own line.
 4. **Lines over time** chart: day-end code and test lines stacked above the axis, documentation below it under a dashed guide. Documentation uses the lower half to separate it from source, not as a negative source count. The chart stacks by kind, not language, because reports carry no per-language series. Its legend sits below the chart.
-5. **Monthly activity** chart: additions and removals by kind and calendar month, with the current month occupying only its elapsed fraction. A compact `+`/`-` legend below the chart names the kind and direction. The bars are not net growth.
-6. Footer: remove the selected workspace, quit.
+5. **Monthly activity** chart: additions and removals by kind and calendar month, with the current month occupying only its elapsed fraction. A compact `+`/`-` legend below the chart names the kind and direction. Both chart legends stay on one row and scroll horizontally if their keys outgrow the chart. The bars are not net growth.
+6. Footer: confirm removal of the selected workspace and its saved report, quit.
 
 Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Chart accessibility descriptors expose dated code, test, and separate documentation values. Hue names the kind and lightness names the direction; the labels remain in text ink. The Dock icon is suppressed with `LSUIElement`.
 
