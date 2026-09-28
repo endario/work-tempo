@@ -14,7 +14,7 @@
 
 - Keep the 430-point popover width; let scroll content set its height up to a screen-safe cap, and scroll beyond it. Use light and dark native surfaces, no new dependency or image assets.
 - Do not modify collector, report format, refresh semantics, `DashboardSnapshot.metrics`, menu-bar label, or Settings.
-- Preserve `--` for unavailable figures and all error/partial/progress banners.
+- Preserve `--` for unavailable figures and all error, partial, and refresh-progress messages.
 - No workspace-removal confirmation in this PR; it needs its own truthful cached-report disclosure and activation review.
 - Use Xcode via `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; do not install this build over the user's app or restart their other sessions.
 
@@ -45,8 +45,8 @@
 **Interfaces:** Use `snapshot.metrics` by ids `source`, `code`, `tests`, `docs`; no Core type changes. `workspaceMenu` yields flexible bounded text with `.truncationMode(.middle)` and `.help` of the selected full display name. Header icon buttons retain callbacks and receive `.accessibilityLabel(help)`; remove `.focusable(false)`.
 
 - **Step 1: Establish failure cases.** Check an exceptionally long workspace display name in the debug view and tab navigation through Refresh, Settings, and Add; note baseline clipping or skipped focus.
-- **Step 2: Rebalance header width.** Keep the title and action buttons at intrinsic sizes; allow only the workspace chooser to compress. Keep `Updated …` visible and leave banners where they are; no duplicate status row.
-- **Step 3: Replace the metric card.** Render source as an aggregate with Code + Tests grouped underneath or alongside it; mark Docs as `separate` in visible text. Present numerals in primary text ink and small color keys only where they map to charts. Use the existing metrics' `--` and labels. Do not perform arithmetic on compact formatted strings.
+- **Step 2: Rebalance header width.** Keep the title and action buttons at intrinsic sizes; allow only the workspace chooser to compress. Keep `Updated …` visible, move fetch-fallback notices behind an info button after the chooser, and retain partial-coverage, error, and refresh-progress banners in content.
+- **Step 3: Replace the metric card.** Render source as an aggregate with Code + Tests grouped underneath or alongside it; put Docs on its own line. Present numerals in primary text ink and small color keys only where they map to charts. Use the existing metrics' `--` and labels. Do not perform arithmetic on compact formatted strings.
 - **Step 4: Check focus and layout.** Verify mouse and keyboard activations, All versus individual scope, refresh/partial/error labels, footer, and the headline hover overlay across the summary. At 430pt measure rendered header and summary ink extents in both appearances. Build and run Swift tests.
 
 ### Task 3: Chart explanation and accessible monthly activity
@@ -57,7 +57,7 @@
 
 - **Step 1: Check baseline.** Confirm month bars' hover readouts and current-month partial width; check that the current chart has only a generic accessibility label.
 - **Step 2: Write a failing descriptor test, then implement.** In `MonthlyChartDescriptorTests`, make a two-month `ChartTimeline` with distinct code/test/docs additions/removals, assert the descriptor's six named series expose literal positive monthly totals, calendar labels, and a current-month `To date` label. Assert `updateChartDescriptor` replaces prior values after a new timeline. Run the targeted test RED before adding `MonthlyChartDescriptor`. Map `timeline.monthlyChurn` into dated additions/removals per kind, preserving unexpected signed report values; summarize that docs is visually below zero only for separation. Set `isContinuous: false`; follow the pilot's update semantics and attach it to `MonthlyChurnChart`. Run targeted test GREEN.
-- **Step 3: Clarify visible charts.** Title the charts `SOURCE LINES OVER TIME` and `MONTHLY ACTIVITY`; add a compact visible docs-separation note and a monthly `Added + removed, not net change` note. Reflow the six legend entries into two ordered rows grouped by Code/Tests/Docs, with text `Added`/`Removed`; retain color keys and distinguish marks by text. Ensure each row fits the 430pt width at default and enlarged text.
+- **Step 3: Clarify visible charts.** Title the charts `LINES OVER TIME` and `MONTHLY ACTIVITY`; keep both headings free of subtitles, put the source legend below its chart, and use one compact row of `+`/`-` keys below monthly activity.
 - **Step 4: Validate both charts.** Hover first/last plot points, inspect each descriptor's dates/counts, switch scope or refresh and verify updated values, and check current partial periods. Measure tick/legend/title ink bounds and note spacing/overflow across dark and light screenshots. Run full Swift tests and release build; run Python collector tests and compile checks.
 
 ### Task 4: Content-sized popover with screen cap
@@ -74,6 +74,6 @@
 
 **Files:** Update `docs/macos-app.md` and relevant README macOS paragraph; finalize `docs/ui-refresh/design.md` with verified outcome and any difference from the spec.
 
-- **Step 1: Compare the actual result to Outcome.** A user should be able to answer the headline question from visible text without hover; both charts remain stacked and their keys/notes fit when the display has room, otherwise the body scrolls without hiding the footer. Record measured ink extents and disclose any unverified visual state.
+- **Step 1: Compare the actual result to Outcome.** A user should be able to answer the headline question from visible text without hover; both charts remain stacked and their keys fit when the display has room, otherwise the body scrolls without hiding the footer. Record measured ink extents and disclose any unverified visual state.
 - **Step 2: Review the entire diff.** Run the local code-review pre-pass, fix verified issues, open a draft PR, run the independent review gate, address findings, and merge after a ship-it verdict. Do not publish the user's data screenshot in the PR.
 - **Step 3: Drain loose ends separately.** Decide whether the cached-report deletion confirmation warrants a second targeted PR or an issue; never add it to this visual diff. Remove only task-owned temporary files/processes; leave the user’s installed app and worktree intact unless asked otherwise.

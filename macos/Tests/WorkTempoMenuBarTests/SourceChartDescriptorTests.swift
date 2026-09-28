@@ -7,9 +7,9 @@ final class SourceChartDescriptorTests: XCTestCase {
     func testDocumentationIsPositiveSeparateSeries() {
         let descriptor = SourceChartDescriptor(timeline: timeline(docs: [5, 6, 7])).makeChartDescriptor()
 
-        XCTAssertEqual(descriptor.title, "Source lines over time")
+        XCTAssertEqual(descriptor.title, "Lines over time")
         XCTAssertTrue(descriptor.summary?.contains("below") == true)
-        XCTAssertEqual(descriptor.series.compactMap(\.name), ["Code", "Tests", "Docs (separate)"])
+        XCTAssertEqual(descriptor.series.compactMap(\.name), ["Code", "Tests", "Docs"])
         XCTAssertEqual(descriptor.series[0].dataPoints.map(category), ["2026-08-01", "2026-08-02", "2026-08-03"])
         XCTAssertEqual(descriptor.series[0].dataPoints.map(number), [20, 22, 27])
         XCTAssertEqual(descriptor.series[1].dataPoints.map(number), [10, 10, 13])

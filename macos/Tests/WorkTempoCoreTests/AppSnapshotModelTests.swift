@@ -179,6 +179,8 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.chartTimeline?.monthlyChurn.map(\.label), [
             "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08",
         ])
+        XCTAssertNil(snapshot.coverageMessage)
+        XCTAssertNil(snapshot.noticeMessage)
     }
 
     func testZeroChurnIsAvailableMomentum() throws {
@@ -221,6 +223,7 @@ final class AppSnapshotModelTests: XCTestCase {
             historyWindow: HistoryWindow(historyDays: 184)
         )
         XCTAssertEqual(individual.noticeMessage, "1 repository using last-fetched origin/main")
+        XCTAssertNil(individual.coverageMessage)
 
         let portfolio = try PortfolioMomentum.build(
             workspaces: [first, second],
@@ -234,10 +237,8 @@ final class AppSnapshotModelTests: XCTestCase {
             now: try generatedAt(report),
             maxWindowDays: 30
         )
-        XCTAssertEqual(
-            aggregate.noticeMessage,
-            "1 of 2 workspaces contributing · 1 repository using last-fetched origin/main"
-        )
+        XCTAssertEqual(aggregate.coverageMessage, "1 of 2 workspaces contributing")
+        XCTAssertEqual(aggregate.noticeMessage, "1 repository using last-fetched origin/main")
         let failed = DashboardSnapshot(
             portfolio: portfolio,
             refreshState: .failed("collector unavailable"),
@@ -245,10 +246,11 @@ final class AppSnapshotModelTests: XCTestCase {
             maxWindowDays: 30
         )
         XCTAssertEqual(failed.errorMessage, "collector unavailable")
+        XCTAssertEqual(failed.coverageMessage, aggregate.coverageMessage)
         XCTAssertEqual(failed.noticeMessage, aggregate.noticeMessage)
     }
 
-    func testPartialPortfolioUsesNoticeChannel() throws {
+    func testPartialPortfolioKeepsCoverageWithoutFallbackNotice() throws {
         let first = try Workspace(root: URL(fileURLWithPath: "/tmp/first"))
         let second = try Workspace(root: URL(fileURLWithPath: "/tmp/second"))
         let report = try self.report(currentChurn: 30, previousChurn: 0)
@@ -267,7 +269,8 @@ final class AppSnapshotModelTests: XCTestCase {
         )
 
         XCTAssertNil(snapshot.errorMessage)
-        XCTAssertEqual(snapshot.noticeMessage, "1 of 2 workspaces contributing")
+        XCTAssertEqual(snapshot.coverageMessage, "1 of 2 workspaces contributing")
+        XCTAssertNil(snapshot.noticeMessage)
     }
 
     private func report(
