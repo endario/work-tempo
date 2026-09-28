@@ -304,7 +304,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             original_run = tempo.run
             try:
                 tempo.run = fake_run
-                repos, skipped = tempo.list_repos(root, config)
+                repos, skipped, extra_count = tempo.list_repos(root, config)
             finally:
                 tempo.run = original_run
 
@@ -312,6 +312,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 [label for label, _path in repos],
                 ["(parent)", "modules/core", "companion", "embedded"],
             )
+            self.assertEqual(extra_count, 2)
             self.assertIn("modules/prototype", skipped)
             self.assertIn("modules/demo", skipped)
             self.assertIn("modules/status-site", skipped)
@@ -349,7 +350,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             original_run = tempo.run
             try:
                 tempo.run = fake_run
-                repos, skipped = tempo.list_repos(root, tempo.default_config())
+                repos, skipped, _extra_count = tempo.list_repos(root, tempo.default_config())
             finally:
                 tempo.run = original_run
 
@@ -365,7 +366,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             make_tracked_repo(submodule)
             (root / "alias").symlink_to(submodule, target_is_directory=True)
             with mock.patch.object(tempo, "gitmodule_paths", return_value=["modules/core", "alias"]):
-                repos, skipped = tempo.list_repos(root, tempo.default_config())
+                repos, skipped, _extra_count = tempo.list_repos(root, tempo.default_config())
             self.assertEqual(repos, [("(parent)", root), ("modules/core", submodule)])
             self.assertEqual(skipped, [])
 
@@ -381,9 +382,10 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 {"label": "shared", "path": "."},
                 {"label": "shared", "path": "../branch"},
             ))
-            repos, skipped = tempo.list_repos(root, config)
+            repos, skipped, extra_count = tempo.list_repos(root, config)
             self.assertEqual(repos, [("(parent)", root), ("shared", other.resolve())])
             self.assertEqual(skipped, [])
+            self.assertEqual(extra_count, 1)
 
     def test_list_repos_keeps_first_submodule_label_for_extra_alias(self) -> None:
         tempo = load_script("tempo_submodule_dedup_test", "src/work_tempo/cli.py")
@@ -396,9 +398,10 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 {"label": "alias", "path": "modules/core"},
             ))
             with mock.patch.object(tempo, "gitmodule_paths", return_value=["modules/core"]):
-                repos, skipped = tempo.list_repos(root, config)
+                repos, skipped, extra_count = tempo.list_repos(root, config)
             self.assertEqual(repos, [("(parent)", root), ("modules/core", submodule)])
             self.assertEqual(skipped, [])
+            self.assertEqual(extra_count, 0)
 
     def test_list_repos_skips_missing_gitmodules_path(self) -> None:
         tempo = load_script("tempo_missing_gitmodules_path_test", "src/work_tempo/cli.py")
@@ -421,7 +424,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             original_run = tempo.run
             try:
                 tempo.run = fake_run
-                repos, skipped = tempo.list_repos(root, tempo.default_config())
+                repos, skipped, _extra_count = tempo.list_repos(root, tempo.default_config())
             finally:
                 tempo.run = original_run
 
@@ -440,7 +443,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 tempo.default_config(),
                 extra_repos=({"label": "companion", "path": "nested/companion"},),
             )
-            repos, skipped = tempo.list_repos(root, config)
+            repos, skipped, _extra_count = tempo.list_repos(root, config)
 
         self.assertEqual([label for label, _path in repos], ["(parent)"])
         self.assertEqual(skipped, ["companion"])
@@ -518,7 +521,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                 tempo.run = fake_run
 
                 config = tempo.build_config(defaults, [("test", {"extra_repos": []})], "Fixture")
-                repos, skipped = tempo.list_repos(root, config)
+                repos, skipped, _extra_count = tempo.list_repos(root, config)
                 self.assertEqual([label for label, _path in repos], ["(parent)"])
                 self.assertEqual(skipped, [])
 
@@ -527,7 +530,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
                     [("test", {"extra_repos": [{"label": "custom-consult", "path": "../custom-consult"}]})],
                     "Fixture",
                 )
-                repos, skipped = tempo.list_repos(root, config)
+                repos, skipped, _extra_count = tempo.list_repos(root, config)
                 self.assertEqual([label for label, _path in repos], ["(parent)", "custom-consult"])
                 self.assertEqual(skipped, [])
             finally:
@@ -845,10 +848,12 @@ class LocAnalysisScriptTest(unittest.TestCase):
             argv = ["work-tempo", "--root", str(parent), "--period", "day", "--days", "1",
                     "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
                     "--no-languages"]
+            stdout = io.StringIO()
             with (mock.patch.object(sys, "argv", argv),
                   mock.patch.object(sys, "stderr", io.StringIO()),
-                  redirect_stdout(io.StringIO())):
+                  redirect_stdout(stdout)):
                 self.assertEqual(tempo.main(), 0)
+            self.assertIn("Repos: 3 counted repositories (parent + 0 submodules + 2 extra repos)", stdout.getvalue())
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report["series"]["churn"], [6])
             self.assertEqual(report["series"]["loc"], [6])
