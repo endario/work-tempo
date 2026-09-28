@@ -4,6 +4,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
+    @State private var dashboardContentHeight: CGFloat = 445
     let onRefresh: () -> Void
     let onAdd: () -> Void
     let onRemove: () -> Void
@@ -29,25 +30,22 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            // Measured at 2x: mixed text sizes need a one-point optical lift against SF Symbols.
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("Work Tempo")
                 .font(.system(size: 15, weight: .semibold))
                 .fixedSize()
-                .frame(height: 24)
-                .offset(y: -1)
             if !model.workspaces.isEmpty {
-                workspaceMenu
+                // The chevron-backed menu's synthetic baseline leaves its label high;
+                // measured against the 15-point title and 14-point scope at 2x.
+                workspaceMenu.offset(y: 2)
             }
             Spacer()
-            HStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if !model.workspaces.isEmpty {
                     Text(lastUpdatedLabel)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
-                        .frame(height: 24)
-                        .offset(y: -1)
                 }
                 actionButton(
                     model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
@@ -92,16 +90,19 @@ struct DashboardView: View {
             Text(model.scope == .all ? "All" : model.selectedWorkspace?.displayName ?? "Workspace")
                 .font(.system(size: 14, weight: .medium))
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: model.scope == .all, vertical: false)
+        .frame(maxWidth: model.scope == .all ? nil : 105, alignment: .leading)
         .frame(height: 24)
-        .help("Choose workspace")
+        .layoutPriority(-1)
+        .help(model.scope == .all ? "Choose workspace" : model.selectedWorkspace?.displayName ?? "Choose workspace")
     }
 
     private var dashboard: some View {
         ScrollView {
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 if let message = model.snapshot.errorMessage {
                     errorBanner(message)
                 }
@@ -119,57 +120,78 @@ struct DashboardView: View {
                 chartSection
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                dashboardContentHeight = height
+            }
         }
-        .frame(height: 445)
+        .frame(height: Self.viewportHeight(content: dashboardContentHeight, screenHeight: visibleScreenHeight))
+    }
+
+    private var visibleScreenHeight: CGFloat {
+        NSApp.keyWindow?.screen?.visibleFrame.height
+            ?? NSScreen.screens.map(\.visibleFrame.height).min()
+            ?? 700
+    }
+
+    nonisolated static func viewportHeight(content: CGFloat, screenHeight: CGFloat) -> CGFloat {
+        // Reserve space for the fixed header, footer, and window edge.
+        min(content, max(180, screenHeight - 120))
     }
 
     private var metricRow: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(model.snapshot.metrics.enumerated()), id: \.element.id) { index, metric in
-                if index == 1 {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.24))
-                        .frame(width: 1.5, height: 40)
-                } else if index > 1 {
-                    Divider().frame(height: 34)
-                }
-                VStack(spacing: 3) {
-                    Text(metric.value)
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(metricColor(metric.id))
-                    Text(metric.label)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(metricValue("source"))
+                .font(.system(size: 21, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+            Text("SOURCE LINES")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("\(metricValue("code")) code + \(metricValue("tests")) tests")
+                Text("\(metricValue("docs")) docs · separate")
             }
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 7)
-        .background(Color.secondary.opacity(0.055))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .padding(.vertical, 6)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func metricValue(_ id: String) -> String {
+        model.snapshot.metrics.first { $0.id == id }?.value ?? "--"
     }
 
     private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline) {
                         chartTitle(
-                            "SOURCE LOC",
+                            "SOURCE LINES OVER TIME",
                             help: "Day-end code and test lines stacked as source; documentation is counted separately, below the axis"
                         )
                         Spacer()
                         kindLegend
                     }
                     SourceVolumeChart(timeline: chart)
+                    Text("Docs use the space below zero for separation")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    chartTitle(
-                        "MONTHLY CHURN",
-                        help: "Code and test lines added and removed per calendar month; documentation is counted separately, below the axis"
-                    )
+                    HStack(alignment: .firstTextBaseline) {
+                        chartTitle(
+                            "MONTHLY ACTIVITY",
+                            help: "Code and test lines added and removed per calendar month; documentation is counted separately, below the axis"
+                        )
+                        Spacer()
+                        Text("Docs separate · added + removed, not net")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -217,9 +239,11 @@ struct DashboardView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .focusable(false)
+        .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
+        // SF Symbols have no text baseline; align their ink with the header labels.
+        .offset(y: 1)
         .help(help)
     }
 
@@ -227,18 +251,22 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             legend("Code", swatch: TempoPalette.code)
             legend("Tests", swatch: TempoPalette.tests)
-            legend("Docs", swatch: TempoPalette.docs)
+            legend("Docs · separate", swatch: TempoPalette.docs)
         }
     }
 
     private var changeLegend: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            legend("Code +", swatch: TempoPalette.codeAdded)
-            legend("Code -", swatch: TempoPalette.codeDeleted)
-            legend("Tests +", swatch: TempoPalette.testAdded)
-            legend("Tests -", swatch: TempoPalette.testDeleted)
-            legend("Docs +", swatch: TempoPalette.docsAdded)
-            legend("Docs -", swatch: TempoPalette.docsDeleted)
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+            GridRow {
+                legend("Code added", swatch: TempoPalette.codeAdded)
+                legend("Tests added", swatch: TempoPalette.testAdded)
+                legend("Docs added", swatch: TempoPalette.docsAdded)
+            }
+            GridRow {
+                legend("Code removed", swatch: TempoPalette.codeDeleted)
+                legend("Tests removed", swatch: TempoPalette.testDeleted)
+                legend("Docs removed", swatch: TempoPalette.docsDeleted)
+            }
         }
     }
 
@@ -250,15 +278,6 @@ struct DashboardView: View {
             Text(label).foregroundStyle(.secondary)
         }
         .font(.caption2)
-    }
-
-    private func metricColor(_ id: String) -> Color {
-        switch id {
-        case "code": TempoPalette.code
-        case "tests": TempoPalette.tests
-        case "docs": TempoPalette.docs
-        default: TempoPalette.source
-        }
     }
 
     private func errorBanner(_ message: String) -> some View {

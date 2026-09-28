@@ -20,9 +20,6 @@ enum TempoPalette {
 
     static let fillOpacity = 0.5
 
-    static let positive = adaptive(light: 0x009300, dark: 0x0CA30C)
-    static let negative = adaptive(light: 0xD03B3B, dark: 0xE5504D)
-
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -258,6 +255,7 @@ struct MonthlyChurnChart: View {
         }
         .frame(height: 116)
         .accessibilityLabel("Monthly code, test, and documentation additions and removals")
+        .accessibilityChartDescriptor(MonthlyChartDescriptor(timeline: timeline))
     }
 
     private func hoverRows(_ index: Int) -> [HoverRow] {
