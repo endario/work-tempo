@@ -191,8 +191,7 @@ struct DashboardView: View {
                         help: "Day-end code and test lines stacked as source; docs are drawn below zero for distinction, with actual counts in the hover readout"
                     )
                     SourceVolumeChart(timeline: chart)
-                    kindLegend
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    fittingLegend(kindLegend)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     sectionRule
@@ -201,8 +200,7 @@ struct DashboardView: View {
                         help: "Code and test lines added and removed per calendar month; docs are drawn below zero for distinction, with actual counts in the hover readout"
                     )
                     MonthlyChurnChart(timeline: chart)
-                    changeLegend
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    fittingLegend(changeLegend)
                 }
             } else {
                 ContentUnavailableView(
@@ -226,8 +224,11 @@ struct DashboardView: View {
 
     private var footer: some View {
         HStack {
-            Button("Remove", systemImage: "minus.circle", action: onRemove)
-                .disabled(model.selectedWorkspace == nil)
+            Button("Remove", systemImage: "minus.circle") {
+                guard let workspace = model.selectedWorkspace else { return }
+                confirmRemoval(of: workspace)
+            }
+            .disabled(model.selectedWorkspace == nil)
             Spacer()
             Button("Quit Work Tempo", action: onQuit)
                 .keyboardShortcut("q")
@@ -238,6 +239,20 @@ struct DashboardView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+    }
+
+    private func confirmRemoval(of workspace: Workspace) {
+        // The menu-bar window can close before a SwiftUI alert presents.
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Remove workspace?"
+        alert.informativeText = "Work Tempo will stop tracking \(workspace.displayName) and delete any saved report. Your Git repository will remain on disk."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Remove Workspace").hasDestructiveAction = true
+        if alert.runModal() == .alertSecondButtonReturn, model.selectedWorkspace == workspace {
+            onRemove()
+        }
     }
 
     private func actionButton(
@@ -259,6 +274,17 @@ struct DashboardView: View {
         // SF Symbols need an optical shift against the 14-point header text.
         .offset(y: 0.75)
         .help(help)
+    }
+
+    private func fittingLegend<Content: View>(_ content: Content) -> some View {
+        ViewThatFits(in: .horizontal) {
+            content.fixedSize(horizontal: true, vertical: false)
+            ScrollView(.horizontal) {
+                content.fixedSize(horizontal: true, vertical: false)
+            }
+            .scrollIndicators(.automatic)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var kindLegend: some View {
