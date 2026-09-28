@@ -6,63 +6,86 @@ struct MomentumHero: View {
     let snapshot: DashboardSnapshot
 
     var body: some View {
-        HStack(spacing: 14) {
-            metric(
-                value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.dailyChurn) : "--",
-                unit: "/ DAY",
-                color: TempoPalette.source,
-                trend: snapshot.recentChurn + (snapshot.openDay.map { [$0.churn] } ?? []),
-                readout: { index in
-                    let added = self.added(at: index)
-                    let removed = self.removed(at: index)
-                    return [
-                        HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
-                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
-                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
-                    ]
-                },
-                help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
-            )
+        VStack(alignment: .leading, spacing: 5) {
+            Text(Self.headlineContext(windowDays: snapshot.windowDays, isAvailable: snapshot.hasMomentum))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
 
-            Divider()
-                .frame(height: 56)
+            HStack(alignment: .top, spacing: 14) {
+                metric(
+                    title: "SOURCE CHURN",
+                    value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.dailyChurn) : "--",
+                    unit: "LINES / DAY",
+                    weight: .bold,
+                    color: TempoPalette.source,
+                    trend: snapshot.recentChurn + (snapshot.openDay.map { [$0.churn] } ?? []),
+                    readout: { index in
+                        let added = self.added(at: index)
+                        let removed = self.removed(at: index)
+                        return [
+                            HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
+                            HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
+                            HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
+                        ]
+                    },
+                    help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
+                )
 
-            metric(
-                value: snapshot.hasMomentum ? signed(snapshot.netGrowth) : "--",
-                unit: "/ \(snapshot.windowDays)D",
-                color: snapshot.netGrowth >= 0 ? TempoPalette.positive : TempoPalette.negative,
-                trend: runningNet,
-                readout: { index in
-                    let added = self.added(at: index)
-                    let removed = self.removed(at: index)
-                    return [
-                        HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
-                        HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
-                        HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
-                        HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true, separated: true),
-                    ]
-                },
-                help: "Code and test lines added minus removed over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
-            )
+                Divider()
+                    .frame(height: 70)
+
+                metric(
+                    title: "NET SOURCE CHANGE",
+                    value: snapshot.hasMomentum ? signed(snapshot.netGrowth) : "--",
+                    unit: "LINES",
+                    weight: .medium,
+                    color: .secondary,
+                    trend: runningNet,
+                    readout: { index in
+                        let added = self.added(at: index)
+                        let removed = self.removed(at: index)
+                        return [
+                            HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
+                            HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
+                            HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
+                            HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true, separated: true),
+                        ]
+                    },
+                    help: "Code and test lines added minus removed over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
+                )
+            }
         }
     }
 
+    nonisolated static func headlineContext(windowDays: Int, isAvailable: Bool) -> String {
+        isAvailable ? "LAST \(windowDays) CLOSED DAYS" : "HEADLINE UNAVAILABLE"
+    }
+
     private func metric(
+        title: String,
         value: String,
         unit: String,
+        weight: Font.Weight,
         color: Color,
         trend: [Int],
         readout: @escaping (Int) -> [HoverRow],
         help: String
     ) -> some View {
-        VStack(spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(value)
-                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .font(.system(size: 30, weight: weight, design: .rounded))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .layoutPriority(1)
                     .foregroundStyle(color)
                 Text(unit)
                     .font(.caption2.weight(.semibold))
+                    .fixedSize(horizontal: true, vertical: false)
                     .foregroundStyle(.secondary)
             }
             // What the figure means belongs to the figure. Over the plot the
@@ -77,9 +100,9 @@ struct MomentumHero: View {
                 color: color
             )
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(value) \(help)")
+        .accessibilityLabel("\(title), \(value) \(unit). \(help)")
     }
 
     /// The open day extends both sparklines by one point. It stays out of the

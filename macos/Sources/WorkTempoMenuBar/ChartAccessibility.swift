@@ -2,6 +2,16 @@ import Accessibility
 import WorkTempoCore
 import SwiftUI
 
+private func copyChartDescriptor(_ source: AXChartDescriptor, into destination: AXChartDescriptor) {
+    destination.title = source.title
+    destination.summary = source.summary
+    destination.xAxis = source.xAxis
+    destination.yAxis = source.yAxis
+    destination.additionalAxes = source.additionalAxes
+    destination.contentDirection = source.contentDirection
+    destination.series = source.series
+}
+
 struct SourceChartDescriptor: AXChartDescriptorRepresentable {
     let timeline: ChartTimeline
 
@@ -50,12 +60,7 @@ struct SourceChartDescriptor: AXChartDescriptorRepresentable {
     }
 
     func updateChartDescriptor(_ descriptor: AXChartDescriptor) {
-        let updated = makeChartDescriptor()
-        descriptor.title = updated.title
-        descriptor.summary = updated.summary
-        descriptor.xAxis = updated.xAxis
-        descriptor.yAxis = updated.yAxis
-        descriptor.series = updated.series
+        copyChartDescriptor(makeChartDescriptor(), into: descriptor)
     }
 }
 
@@ -109,11 +114,6 @@ struct MonthlyChartDescriptor: AXChartDescriptorRepresentable {
     }
 
     func updateChartDescriptor(_ descriptor: AXChartDescriptor) {
-        let updated = makeChartDescriptor()
-        descriptor.title = updated.title
-        descriptor.summary = updated.summary
-        descriptor.xAxis = updated.xAxis
-        descriptor.yAxis = updated.yAxis
-        descriptor.series = updated.series
+        copyChartDescriptor(makeChartDescriptor(), into: descriptor)
     }
 }

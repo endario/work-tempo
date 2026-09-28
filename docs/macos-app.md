@@ -76,7 +76,7 @@ The window is the trailing closed days — 30 by default, configurable in Settin
 
 The menu-bar item shows the same daily churn, compact, with a `/d` suffix (for example `12.3K/d`). It shows `--` before any report exists, a spinner glyph while refreshing, and a warning marker when data is stale or a refresh failed.
 
-The four metric columns show the latest source, code, tests, and docs LOC. Source LOC excludes documentation.
+The composition summary shows the latest source LOC with its code and test components; documentation LOC is separate.
 
 ## Aggregation
 
@@ -97,16 +97,16 @@ Individual and aggregate views share one metric input (`MomentumInput`); aggrega
 
 ## Interface
 
-A 430-point popover with a fixed header and footer:
+A 430-point popover keeps its header and footer fixed. The middle grows to fit its content up to the display's visible height with room for those controls; on shorter screens, the middle scrolls.
 
-1. Header: scope menu (All Workspaces and each workspace), last refresh, refresh, and add-workspace.
-2. Hero: churn per day and net source LOC, each with a sparkline. The open day appears as a faded trailing segment marked to-date.
-3. Metric columns: source, code, tests, docs.
-4. **Source LOC** chart: day-end code and test lines stacked above the axis over the configured history window, documentation below the axis under a dashed guide. It stacks by kind, not language, because reports carry no per-language series.
-5. **Monthly Churn** chart: the same six series by calendar month. The current month keeps its full slot but fills only the elapsed fraction.
+1. Header: scope menu (All Workspaces and each workspace), last refresh, refresh, Settings, and add-workspace. Long workspace names truncate in the header and remain available in the menu and tooltip.
+2. Hero: labeled source churn per day and net source LOC change over the same closed-day window, each with a sparkline. Net change uses neutral ink because growth is not a quality verdict. The open day appears as a faded trailing segment marked to-date.
+3. Composition: latest source LOC alongside its code and test components; documentation LOC is identified as separate.
+4. **Source lines over time** chart: day-end code and test lines stacked above the axis, documentation below it under a dashed guide. Documentation uses the lower half to separate it from source, not as a negative source count. The chart stacks by kind, not language, because reports carry no per-language series.
+5. **Monthly activity** chart: additions and removals by kind and calendar month, with the current month occupying only its elapsed fraction. A grouped legend distinguishes added from removed counts; the bars are not net growth.
 6. Footer: remove the selected workspace, quit.
 
-Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Hue names the kind (blue code, amber tests, gray docs) and lightness names the direction (additions vs deletions); each step clears 3:1 contrast against its background. The Dock icon is suppressed with `LSUIElement`.
+Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Chart accessibility descriptors expose dated code, test, and separate documentation values. Hue names the kind and lightness names the direction; the labels remain in text ink. The Dock icon is suppressed with `LSUIElement`.
 
 ## Settings
 
