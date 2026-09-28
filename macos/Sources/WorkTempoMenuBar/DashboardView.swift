@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @ObservedObject var model: AppModel
     @State private var dashboardContentHeight: CGFloat = 445
+    @State private var showingNotice = false
     @ScaledMetric(relativeTo: .caption2) private var legendFontSize: CGFloat = 10
     let onRefresh: () -> Void
     let onAdd: () -> Void
@@ -32,7 +33,6 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            // Optical offsets below align rendered ink at 2x; remeasure if header fonts change.
             Text("Work Tempo")
                 .font(.system(size: 15, weight: .semibold))
                 .fixedSize()
@@ -40,6 +40,18 @@ struct DashboardView: View {
             if !model.workspaces.isEmpty {
                 // The chevron-backed menu has no shared ink center with the text row.
                 workspaceMenu.offset(y: 1.75)
+                if let message = model.snapshot.noticeMessage {
+                    actionButton("info.circle", opticalOffset: 1.25, help: "Report notice") {
+                        showingNotice.toggle()
+                    }
+                    .accessibilityValue(message)
+                    .popover(isPresented: $showingNotice, arrowEdge: .bottom) {
+                        Text(message)
+                            .font(.caption)
+                            .frame(maxWidth: 260, alignment: .leading)
+                            .padding(12)
+                    }
+                }
             }
             Spacer()
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -64,6 +76,9 @@ struct DashboardView: View {
         .padding(.horizontal, 18)
         .padding(.top, 16)
         .padding(.bottom, 2)
+        .onChange(of: model.snapshot.noticeMessage) { _, message in
+            if message == nil { showingNotice = false }
+        }
 
     }
 
@@ -110,11 +125,8 @@ struct DashboardView: View {
                 if let message = model.snapshot.errorMessage {
                     errorBanner(message)
                 }
-                if let message = model.snapshot.noticeMessage {
-                    statusBanner(message, symbol: "info.circle.fill")
-                }
                 if let progress = model.refreshProgress {
-                    statusBanner(progress, symbol: "arrow.trianglehead.2.clockwise.rotate.90")
+                    statusBanner(progress)
                 }
                 // The sparkline readouts hang below their 24-point plots, over
                 // the metric row that follows them in this stack.
@@ -154,7 +166,7 @@ struct DashboardView: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
                 Text("\(metricValue("code")) code + \(metricValue("tests")) tests")
-                Text("\(metricValue("docs")) docs · separate")
+                Text("\(metricValue("docs")) docs")
             }
             .font(.caption)
             .monospacedDigit()
@@ -173,34 +185,20 @@ struct DashboardView: View {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
                     sectionRule
-                    HStack(alignment: .firstTextBaseline) {
-                        chartTitle(
-                            "SOURCE LINES OVER TIME",
-                            help: "Day-end code and test lines stacked as source; documentation is counted separately, below the axis"
-                        )
-                        Spacer()
-                        // Caption-sized legend ink sits low against the larger title at 2x.
-                        kindLegend.offset(y: -0.5)
-                    }
+                    chartTitle(
+                        "LINES OVER TIME",
+                        help: "Day-end code and test lines stacked as source; documentation appears below the axis"
+                    )
                     SourceVolumeChart(timeline: chart)
-                    Text("Docs use the space below zero for separation")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                    kindLegend
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     sectionRule
-                    HStack(alignment: .firstTextBaseline) {
-                        chartTitle(
-                            "MONTHLY ACTIVITY",
-                            help: "Code and test lines added and removed per calendar month; documentation is counted separately, below the axis"
-                        )
-                        Spacer()
-                        Text("Docs separate · + added / - removed · not net")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            // Match the title's ink center across mixed caption sizes at 2x.
-                            .offset(y: -0.75)
-                    }
+                    chartTitle(
+                        "MONTHLY ACTIVITY",
+                        help: "Code and test lines added and removed per calendar month; documentation appears below the axis"
+                    )
                     MonthlyChurnChart(timeline: chart)
                     changeLegend
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -232,7 +230,7 @@ struct DashboardView: View {
             Spacer()
             Button("Quit Work Tempo", action: onQuit)
                 .keyboardShortcut("q")
-                // Descenders shift this control's ink below Remove's center at 2x.
+                // Compare against the adjacent icon-and-text button's ink at 2x.
                 .offset(y: -0.75)
         }
         .buttonStyle(.plain)
@@ -258,7 +256,7 @@ struct DashboardView: View {
         .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
-        // SF Symbols have no text baseline; align their ink with the header labels.
+        // Symbols lack a text baseline; compare their ink against the title at 2x.
         .offset(y: opticalOffset)
         .help(help)
     }
@@ -267,7 +265,7 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             legend("Code", swatch: TempoPalette.code)
             legend("Tests", swatch: TempoPalette.tests)
-            legend("Docs · separate", swatch: TempoPalette.docs)
+            legend("Docs", swatch: TempoPalette.docs)
         }
     }
 
@@ -298,7 +296,7 @@ struct DashboardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
-                // Measured against single-line error copy at 2x; remeasure if the font or symbol changes.
+                // Symbols lack text baselines; compare against single-line caption ink at 2x.
                 .offset(y: 0.75)
             Text(message)
                 .font(.caption)
@@ -310,12 +308,12 @@ struct DashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    private func statusBanner(_ message: String, symbol: String) -> some View {
+    private func statusBanner(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Image(systemName: symbol)
+            Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
                 .foregroundStyle(.secondary)
-                // These symbols need different optical offsets against caption text at 2x.
-                .offset(y: symbol == "info.circle.fill" ? 1.5 : 0.75)
+                // Compare this symbol against the progress caption's ink at 2x.
+                .offset(y: 0.75)
             Text(message)
                 .font(.caption)
             Spacer()

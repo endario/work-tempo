@@ -31,7 +31,7 @@ struct SourceChartDescriptor: AXChartDescriptorRepresentable {
         let series: [(String, [Int])] = [
             ("Code", timeline.codeLoc),
             ("Tests", timeline.testLoc),
-            ("Docs (separate)", timeline.docLoc),
+            ("Docs", timeline.docLoc),
         ]
         let descriptors = series.map { name, values in
             AXDataSeriesDescriptor(
@@ -51,7 +51,7 @@ struct SourceChartDescriptor: AXChartDescriptorRepresentable {
             : "Code and tests make up source lines. Documentation is separate: its band is drawn below zero only to distinguish it, and its counts are positive."
         let openSummary = openIndex == nil ? "" : " The current day is partial, to date."
         return AXChartDescriptor(
-            title: "Source lines over time",
+            title: "Lines over time",
             summary: summary + openSummary,
             xAxis: xAxis,
             yAxis: yAxis,
