@@ -32,16 +32,15 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Text("Work Tempo")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .fixedSize()
-                .offset(y: 0.75)
             if !model.workspaces.isEmpty {
-                // The chevron-backed menu has no shared ink center with the text row.
-                workspaceMenu.offset(y: 1.75)
+                // Menu chrome needs an optical shift against the 14-point header text.
+                workspaceMenu.offset(y: 0.75)
                 if let message = model.snapshot.noticeMessage {
-                    actionButton("info.circle", opticalOffset: 1.25, help: "Report notice") {
+                    actionButton("info.circle", help: "Report notice") {
                         showingNotice.toggle()
                     }
                     .accessibilityValue(message)
@@ -54,24 +53,23 @@ struct DashboardView: View {
                 }
             }
             Spacer()
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 if !model.workspaces.isEmpty {
                     Text(lastUpdatedLabel)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
-                        .offset(y: -0.25)
                 }
                 actionButton(
                     model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
-                    opticalOffset: model.snapshot.isRefreshing ? 1.5 : 2,
+                    symbolSize: model.snapshot.isRefreshing ? 14 : 12,
                     help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
                     action: onRefresh
                 )
                     .disabled(model.workspaces.isEmpty)
             }
-            actionButton("gearshape", opticalOffset: 1.25, help: "Settings", action: openSettingsWindow)
-            actionButton("plus", opticalOffset: 1.25, help: "Add workspace", action: onAdd)
+            actionButton("gearshape", help: "Settings", action: openSettingsWindow)
+            actionButton("plus", symbolSize: 14, help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -244,13 +242,13 @@ struct DashboardView: View {
 
     private func actionButton(
         _ symbol: String,
-        opticalOffset: CGFloat,
+        symbolSize: CGFloat = 12,
         help: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: symbolSize, weight: .medium))
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
@@ -258,7 +256,8 @@ struct DashboardView: View {
         .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
-        .offset(y: opticalOffset)
+        // SF Symbols need an optical shift against the 14-point header text.
+        .offset(y: 0.75)
         .help(help)
     }
 
