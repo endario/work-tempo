@@ -1412,7 +1412,6 @@ def _trimmed(value: float, places: int) -> str:
 
 
 def format_compact(n: int) -> str:
-    """Matches the menu-bar app: one decimal below 10K, two below 10M."""
     sign = "-" if n < 0 else ""
     n_abs = abs(n)
     if n_abs < 1_000:
@@ -1425,7 +1424,6 @@ def format_compact(n: int) -> str:
 
 
 def format_rate(value: float) -> str:
-    """A per-day figure as the app shows it: one decimal on every K and M."""
     n_abs = abs(value)
     sign = "-" if value < 0 else ""
     if int(n_abs + 0.5) < 1_000:
@@ -1439,9 +1437,6 @@ def format_rate(value: float) -> str:
 
 
 def headline_window(loc_series: list[int], churn_series: list[int], max_days: int) -> tuple[int, int]:
-    """Start index and length of the app's headline window: the last days up to
-    `max_days`, today included, starting no earlier than the first day with
-    source lines or churn."""
     end = len(loc_series)
     first_tracked = next((i for i in range(end) if loc_series[i] > 0 or churn_series[i] > 0), 0)
     start = max(first_tracked, end - max_days)

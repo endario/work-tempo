@@ -2466,7 +2466,6 @@ class LocAnalysisScriptTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 tempo._extra_repo_list(value, "extra_repos")
 
-    # The same number reads the same in the terminal, the HTML cards and the app.
     def test_compact_figures_match_the_menu_bar_app(self) -> None:
         tempo = load_script("tempo_compact_test", "src/work_tempo/cli.py")
 
