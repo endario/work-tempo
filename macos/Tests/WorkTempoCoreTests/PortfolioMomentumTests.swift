@@ -58,6 +58,30 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(portfolio.chart?.docDeleted.last, 66)
     }
 
+    func testBreakdownSumsEveryContributorOverTheHeadlineWindow() throws {
+        let first = try workspace("first")
+        let second = try workspace("second")
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [
+                first: try report(root: first.root.path, loc: 200, churn: 2,
+                                  codeAdded: 1, testAdded: 2, codeDeleted: 3, testDeleted: 4,
+                                  docAdded: 5, docDeleted: 6),
+                second: try report(root: second.root.path, loc: 300, churn: 3,
+                                   codeAdded: 10, testAdded: 20, codeDeleted: 30, testDeleted: 40,
+                                   docAdded: 50, docDeleted: 60),
+            ],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+
+        let breakdown = try XCTUnwrap(portfolio.momentum?.summary.breakdown)
+
+        XCTAssertEqual(breakdown.code, ChurnTotals(added: 11 * 30, deleted: 33 * 30))
+        XCTAssertEqual(breakdown.tests, ChurnTotals(added: 22 * 30, deleted: 44 * 30))
+        XCTAssertEqual(breakdown.docs, ChurnTotals(added: 55 * 30, deleted: 66 * 30))
+    }
+
     func testMissingReportProducesOnePartialCohort() throws {
         let first = try workspace("first")
         let second = try workspace("second")

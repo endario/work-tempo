@@ -46,6 +46,8 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let recentLabels: [String]
     public let recentAdded: [Int]
     public let recentDeleted: [Int]
+    /// The closed-day window plus today's open day.
+    public let toDateBreakdown: WindowBreakdown?
     public let chartTimeline: ChartTimeline?
     public let openDay: OpenDay?
     public let windowDays: Int
@@ -84,6 +86,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             recentLabels = []
             recentAdded = []
             recentDeleted = []
+            toDateBreakdown = nil
             chartTimeline = nil
             openDay = nil
             windowDays = maxWindowDays
@@ -120,6 +123,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentDeleted = summary.recentDeleted
         windowDays = summary.windowDays
         let timeline = PortfolioMomentum.chart(for: report, historyWindow: historyWindow)
+        toDateBreakdown = timeline?.openDayBreakdown.map { summary.breakdown + $0 } ?? summary.breakdown
         chartTimeline = timeline
         openDay = timeline?.openDay
         historyMessage = chartTimeline == nil
@@ -180,6 +184,9 @@ public struct DashboardSnapshot: Equatable, Sendable {
         recentLabels = summary?.recentLabels ?? []
         recentAdded = summary?.recentAdded ?? []
         recentDeleted = summary?.recentDeleted ?? []
+        toDateBreakdown = summary.map { summary in
+            portfolio.chart?.openDayBreakdown.map { summary.breakdown + $0 } ?? summary.breakdown
+        }
         windowDays = summary?.windowDays ?? maxWindowDays
         chartTimeline = portfolio.chart
         openDay = portfolio.chart?.openDay

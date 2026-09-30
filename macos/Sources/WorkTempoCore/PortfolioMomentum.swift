@@ -90,6 +90,17 @@ public extension ChartTimeline {
         )
     }
 
+    /// Today's churn by kind, for the figures that count the open day. The
+    /// closed-day headline rate leaves it out.
+    var openDayBreakdown: WindowBreakdown? {
+        guard currentProgress != nil, let index = labels.indices.last else { return nil }
+        return WindowBreakdown(
+            code: ChurnTotals(added: codeAdded[index], deleted: codeDeleted[index]),
+            tests: ChurnTotals(added: testAdded[index], deleted: testDeleted[index]),
+            docs: ChurnTotals(added: docAdded[index], deleted: docDeleted[index])
+        )
+    }
+
     var monthlyChurn: [MonthlyChurnPoint] {
         var accumulators: [MonthAccumulator] = []
         for index in labels.indices {
@@ -315,7 +326,17 @@ public struct PortfolioMomentum: Equatable, Sendable {
             testLoc: sum(reports, labels: labels) { $0.series.locByKind.test },
             churn: sum(reports, labels: labels) { $0.series.churn },
             added: sum(reports, labels: labels) { $0.series.added },
-            deleted: sum(reports, labels: labels) { $0.series.deleted }
+            deleted: sum(reports, labels: labels) { $0.series.deleted },
+            codeAdded: sum(reports, labels: labels) { $0.series.addedByKind.code },
+            testAdded: sum(reports, labels: labels) { $0.series.addedByKind.test },
+            codeDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.code },
+            testDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.test },
+            docAdded: sum(reports, labels: labels) {
+                $0.series.docAdded ?? Array(repeating: 0, count: $0.period.labels.count)
+            },
+            docDeleted: sum(reports, labels: labels) {
+                $0.series.docDeleted ?? Array(repeating: 0, count: $0.period.labels.count)
+            }
         )
     }
 

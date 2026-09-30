@@ -20,6 +20,13 @@ enum TempoPalette {
 
     static let fillOpacity = 0.5
 
+    /// Height against the average: ice at the average deepening to blue toward
+    /// the ground, amber at the average burning to red toward the peak.
+    static let coldShallow = adaptive(light: 0x7FC4F5, dark: 0x8AD3FF)
+    static let coldDeep = adaptive(light: 0x1F4FBF, dark: 0x3F7BFF)
+    static let warmShallow = adaptive(light: 0xF2B233, dark: 0xFFC857)
+    static let warmHot = adaptive(light: 0xD62828, dark: 0xFF4D3D)
+
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -490,14 +497,14 @@ struct ChartReadout: View {
         return max(0, min(available - width, trailing))
     }
 
-    private var showsSwatches: Bool {
-        rows.contains { !$0.swatches.isEmpty }
+    private var table: ReadoutTable {
+        ReadoutTable(columns: columns, rows: rows)
     }
 
     var width: CGFloat {
         let labelColumn: CGFloat = 62
         let valueColumn: CGFloat = columns.count > 1 ? 44 : 56
-        return labelColumn + valueColumn * CGFloat(max(1, columns.count)) + (showsSwatches ? 22 : 12)
+        return labelColumn + valueColumn * CGFloat(max(1, columns.count)) + (table.showsSwatches ? 22 : 12)
     }
 
     var body: some View {
@@ -507,6 +514,37 @@ struct ChartReadout: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 1)
 
+            table
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(width: width, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.12)))
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+        .allowsHitTesting(false)
+    }
+}
+
+/// The column heads and rows of a readout, without the card around them: the
+/// hover card wraps it, the hero shows it bare.
+struct ReadoutTable: View {
+    var columns: [String] = []
+    var valueWidth: CGFloat = 40
+    let rows: [HoverRow]
+
+    var showsSwatches: Bool {
+        rows.contains { !$0.swatches.isEmpty }
+    }
+
+    /// Rows with several figures line them up in fixed columns; the header
+    /// above them is optional.
+    private var isTabular: Bool {
+        rows.contains { $0.values.count > 1 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2.5) {
             if columns.count > 1 {
                 row(
                     label: "",
@@ -515,6 +553,7 @@ struct ChartReadout: View {
                     emphasised: false,
                     muted: true
                 )
+                .accessibilityHidden(true)
             }
 
             ForEach(rows) { entry in
@@ -528,15 +567,9 @@ struct ChartReadout: View {
                     emphasised: entry.isTotal,
                     muted: false
                 )
+                .accessibilityElement(children: .combine)
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(width: width, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.12)))
-        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-        .allowsHitTesting(false)
     }
 
     private func row(
@@ -555,7 +588,7 @@ struct ChartReadout: View {
                 Text(value)
                     .monospacedDigit()
                     .foregroundStyle(muted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                    .frame(width: columns.count > 1 ? 40 : nil, alignment: .trailing)
+                    .frame(width: isTabular ? valueWidth : nil, alignment: .trailing)
             }
         }
         .font(.system(size: 10, weight: emphasised ? .semibold : .regular))
@@ -568,15 +601,25 @@ struct ChartReadout: View {
         } else if swatches.isEmpty {
             Color.clear.frame(width: 11, height: 7)
         } else {
-            HStack(spacing: 1) {
-                ForEach(Array(swatches.enumerated()), id: \.offset) { _, color in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(color)
-                        .frame(width: swatches.count > 1 ? 5 : 11, height: 7)
-                }
-            }
-            .frame(width: 11, alignment: .leading)
+            KindChip(colors: swatches)
         }
+    }
+}
+
+/// One kind's hues as a compact block: a single colour, or a pair such as
+/// added beside removed.
+struct KindChip: View {
+    let colors: [Color]
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(color)
+                    .frame(width: colors.count > 1 ? 5 : 11, height: 7)
+            }
+        }
+        .frame(width: 11, alignment: .leading)
     }
 }
 

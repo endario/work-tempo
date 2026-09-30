@@ -10,6 +10,12 @@ public struct MomentumInput: Equatable, Sendable {
     public let churn: [Int]
     public let added: [Int]
     public let deleted: [Int]
+    public let codeAdded: [Int]
+    public let testAdded: [Int]
+    public let codeDeleted: [Int]
+    public let testDeleted: [Int]
+    public let docAdded: [Int]
+    public let docDeleted: [Int]
 
     public init(
         labels: [String],
@@ -20,7 +26,13 @@ public struct MomentumInput: Equatable, Sendable {
         testLoc: [Int],
         churn: [Int],
         added: [Int],
-        deleted: [Int]
+        deleted: [Int],
+        codeAdded: [Int],
+        testAdded: [Int],
+        codeDeleted: [Int],
+        testDeleted: [Int],
+        docAdded: [Int],
+        docDeleted: [Int]
     ) {
         self.labels = labels
         self.generatedDate = generatedDate
@@ -31,9 +43,16 @@ public struct MomentumInput: Equatable, Sendable {
         self.churn = churn
         self.added = added
         self.deleted = deleted
+        self.codeAdded = codeAdded
+        self.testAdded = testAdded
+        self.codeDeleted = codeDeleted
+        self.testDeleted = testDeleted
+        self.docAdded = docAdded
+        self.docDeleted = docDeleted
     }
 
     public init(report: ReportDocument) {
+        let days = report.period.labels.count
         self.init(
             labels: report.period.labels,
             generatedDate: report.generatedDate,
@@ -43,8 +62,51 @@ public struct MomentumInput: Equatable, Sendable {
             testLoc: report.series.locByKind.test,
             churn: report.series.churn,
             added: report.series.added,
-            deleted: report.series.deleted
+            deleted: report.series.deleted,
+            codeAdded: report.series.addedByKind.code,
+            testAdded: report.series.addedByKind.test,
+            codeDeleted: report.series.deletedByKind.code,
+            testDeleted: report.series.deletedByKind.test,
+            docAdded: report.series.docAdded ?? Array(repeating: 0, count: days),
+            docDeleted: report.series.docDeleted ?? Array(repeating: 0, count: days)
         )
+    }
+}
+
+public struct ChurnTotals: Equatable, Sendable {
+    public let added: Int
+    public let deleted: Int
+
+    public init(added: Int, deleted: Int) {
+        self.added = added
+        self.deleted = deleted
+    }
+
+    public var churn: Int { added + deleted }
+    public var net: Int { added - deleted }
+
+    static func + (lhs: ChurnTotals, rhs: ChurnTotals) -> ChurnTotals {
+        ChurnTotals(added: lhs.added + rhs.added, deleted: lhs.deleted + rhs.deleted)
+    }
+}
+
+/// What the headline window added and removed, by kind. Source is code plus
+/// tests; documentation is counted separately and never enters it.
+public struct WindowBreakdown: Equatable, Sendable {
+    public let code: ChurnTotals
+    public let tests: ChurnTotals
+    public let docs: ChurnTotals
+
+    public init(code: ChurnTotals, tests: ChurnTotals, docs: ChurnTotals) {
+        self.code = code
+        self.tests = tests
+        self.docs = docs
+    }
+
+    public var source: ChurnTotals { code + tests }
+
+    static func + (lhs: WindowBreakdown, rhs: WindowBreakdown) -> WindowBreakdown {
+        WindowBreakdown(code: lhs.code + rhs.code, tests: lhs.tests + rhs.tests, docs: lhs.docs + rhs.docs)
     }
 }
 
@@ -61,6 +123,7 @@ public struct MomentumSummary: Equatable, Sendable {
     public let recentLabels: [String]
     public let recentAdded: [Int]
     public let recentDeleted: [Int]
+    public let breakdown: WindowBreakdown
     public let windowDays: Int
 
     public init(report: ReportDocument, maxWindowDays: Int) {
@@ -97,6 +160,17 @@ public struct MomentumSummary: Equatable, Sendable {
         }
         netGrowth = recentNetGrowth.last ?? 0
 
+        func total(_ added: [Int], _ deleted: [Int]) -> ChurnTotals {
+            ChurnTotals(
+                added: added[currentStart..<closedEnd].reduce(0, +),
+                deleted: deleted[currentStart..<closedEnd].reduce(0, +)
+            )
+        }
+        breakdown = WindowBreakdown(
+            code: total(input.codeAdded, input.codeDeleted),
+            tests: total(input.testAdded, input.testDeleted),
+            docs: total(input.docAdded, input.docDeleted)
+        )
     }
 }
 

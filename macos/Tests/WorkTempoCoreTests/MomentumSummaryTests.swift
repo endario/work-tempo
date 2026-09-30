@@ -57,6 +57,73 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(zip(summary.recentAdded, summary.recentDeleted).map(+), summary.recentChurn)
     }
 
+    // The table under the hero sums each kind over the window the headline
+    // figures use, so an off-by-one window or a crossed kind shows up here.
+    func testBreakdownSumsEachKindOverTheHeadlineWindow() throws {
+        let codeAdded = (0..<60).map { 1 + $0 }
+        let testAdded = (0..<60).map { 1_000 + $0 }
+        let codeDeleted = (0..<60).map { 10_000 + $0 }
+        let testDeleted = (0..<60).map { 100_000 + $0 }
+        let docAdded = (0..<60).map { 1_000_000 + $0 }
+        let docDeleted = (0..<60).map { 10_000_000 + $0 }
+        let window = 30..<60
+        let report = try ReportDocument.decode(data: makeReportData(
+            churn: Array(repeating: 1, count: 61),
+            added: zip(codeAdded, testAdded).map(+) + [99_999],
+            deleted: zip(codeDeleted, testDeleted).map(+) + [99_999],
+            codeAdded: codeAdded + [99_999],
+            testAdded: testAdded + [99_999],
+            codeDeleted: codeDeleted + [99_999],
+            testDeleted: testDeleted + [99_999],
+            docAdded: docAdded + [99_999],
+            docDeleted: docDeleted + [99_999]
+        ))
+
+        let breakdown = MomentumSummary(report: report, maxWindowDays: 30).breakdown
+
+        XCTAssertEqual(breakdown.code, ChurnTotals(added: codeAdded[window].reduce(0, +), deleted: codeDeleted[window].reduce(0, +)))
+        XCTAssertEqual(breakdown.tests, ChurnTotals(added: testAdded[window].reduce(0, +), deleted: testDeleted[window].reduce(0, +)))
+        XCTAssertEqual(breakdown.docs, ChurnTotals(added: docAdded[window].reduce(0, +), deleted: docDeleted[window].reduce(0, +)))
+    }
+
+    func testBreakdownSourceIsCodePlusTestsAndMatchesTheHeadline() throws {
+        let report = try ReportDocument.decode(data: makeReportData(
+            churn: Array(repeating: 10, count: 61),
+            added: Array(repeating: 7, count: 61),
+            deleted: Array(repeating: 3, count: 61),
+            codeAdded: Array(repeating: 5, count: 61),
+            testAdded: Array(repeating: 2, count: 61),
+            codeDeleted: Array(repeating: 2, count: 61),
+            testDeleted: Array(repeating: 1, count: 61),
+            docAdded: Array(repeating: 100, count: 61),
+            docDeleted: Array(repeating: 100, count: 61)
+        ))
+
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
+
+        XCTAssertEqual(summary.breakdown.source, ChurnTotals(added: 210, deleted: 90))
+        XCTAssertEqual(summary.breakdown.source.churn, summary.currentChurn)
+        XCTAssertEqual(summary.breakdown.source.net, summary.netGrowth)
+        XCTAssertEqual(summary.breakdown.docs.churn, 6_000, "docs stay out of source")
+    }
+
+    func testBreakdownStartsAtTheFirstTrackedDayForAYoungWorkspace() throws {
+        let idle = Array(repeating: 0, count: 55)
+        let report = try ReportDocument.decode(data: makeReportData(
+            loc: idle + Array(repeating: 100, count: 5) + [100],
+            churn: idle + Array(repeating: 20, count: 5) + [99_999],
+            added: idle + Array(repeating: 12, count: 5) + [99_999],
+            deleted: idle + Array(repeating: 8, count: 5) + [99_999],
+            docAdded: Array(repeating: 9, count: 61)
+        ))
+
+        let summary = MomentumSummary(report: report, maxWindowDays: 30)
+
+        XCTAssertEqual(summary.windowDays, 5)
+        XCTAssertEqual(summary.breakdown.code, ChurnTotals(added: 60, deleted: 40))
+        XCTAssertEqual(summary.breakdown.docs.added, 45, "five tracked days, not the thirty before them")
+    }
+
     func testRateIsMeasuredFromTheFirstTrackedDayForAYoungWorkspace() throws {
         let idle = Array(repeating: 0, count: 55)
         let live = Array(repeating: 100, count: 5)

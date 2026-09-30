@@ -20,6 +20,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.menuAccessibilityLabel, "Work Tempo, fixture, no report yet")
         XCTAssertFalse(snapshot.hasMomentum)
         XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
+        XCTAssertNil(snapshot.toDateBreakdown)
 
         let refreshing = DashboardSnapshot(
             workspace: workspace,
@@ -79,6 +80,63 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertTrue(snapshot.hasMomentum)
         XCTAssertEqual(snapshot.recentChurn.count, 30)
         XCTAssertEqual(snapshot.recentNetGrowth.last, snapshot.netGrowth)
+    }
+
+    // Today is partial, so the rate beside it leaves it out; the total is the
+    // figure that counts it, by kind.
+    func testToDateBreakdownCountsTodayOnTopOfTheClosedWindow() throws {
+        let report = try reportWithOpenDay()
+        let snapshot = DashboardSnapshot(
+            workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
+            report: report,
+            refreshState: .idle,
+            now: try generatedAt(report),
+            staleInterval: 3_600,
+            maxWindowDays: 30,
+            historyWindow: HistoryWindow(historyDays: 184)
+        )
+
+        assertTodayIsCounted(snapshot.toDateBreakdown)
+    }
+
+    func testAggregateToDateBreakdownCountsTodayToo() throws {
+        let report = try reportWithOpenDay()
+        let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [workspace],
+            reports: [workspace: report],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+        let snapshot = DashboardSnapshot(
+            portfolio: portfolio,
+            refreshState: .idle,
+            now: try generatedAt(report),
+            maxWindowDays: 30
+        )
+
+        assertTodayIsCounted(snapshot.toDateBreakdown)
+    }
+
+    /// Thirty closed days of a steady rate, then a busy open day.
+    private func reportWithOpenDay() throws -> ReportDocument {
+        func days(_ closed: Int, today: Int) -> [Int] { Array(repeating: closed, count: 60) + [today] }
+        return try ReportDocument.decode(data: makeReportData(
+            added: days(11, today: 730),
+            deleted: days(3, today: 6),
+            codeAdded: days(10, today: 700),
+            testAdded: days(1, today: 30),
+            codeDeleted: days(2, today: 5),
+            testDeleted: days(1, today: 1),
+            docAdded: days(5, today: 9),
+            docDeleted: days(3, today: 2)
+        ))
+    }
+
+    private func assertTodayIsCounted(_ breakdown: WindowBreakdown?, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(breakdown?.code, ChurnTotals(added: 30 * 10 + 700, deleted: 30 * 2 + 5), file: file, line: line)
+        XCTAssertEqual(breakdown?.tests, ChurnTotals(added: 30 * 1 + 30, deleted: 30 * 1 + 1), file: file, line: line)
+        XCTAssertEqual(breakdown?.docs, ChurnTotals(added: 30 * 5 + 9, deleted: 30 * 3 + 2), file: file, line: line)
     }
 
     func testRefreshingAndFailedSnapshotsRetainCachedValues() throws {
