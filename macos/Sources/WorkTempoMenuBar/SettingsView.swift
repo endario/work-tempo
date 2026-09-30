@@ -60,7 +60,7 @@ struct SettingsView: View {
                         Text("\(days)d").tag(days)
                     }
                 }
-                Text("The rolling window behind the churn/day and net growth hero metrics.")
+                Text("The rolling window behind the churn/day and total churn hero metrics.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

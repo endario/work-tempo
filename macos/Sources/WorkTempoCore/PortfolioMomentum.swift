@@ -57,7 +57,7 @@ public struct ChartTimeline: Equatable, Sendable {
 }
 
 /// Today, when every contributing report shares it. Its churn is real but
-/// partial, so it is kept out of the headline rate and marked where it is drawn.
+/// partial, so it is marked where it is drawn.
 public struct OpenDay: Equatable, Sendable {
     public let label: String
     public let added: Int
@@ -247,7 +247,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
         }
 
         let commonClosed = commonClosedLabels(contributors.map(\.1))
-        let momentumLabels = Array(commonClosed.suffix(min(windowDays, commonClosed.count)))
+        let momentumDays = commonClosed + (sharedOpenLabel(contributors.map(\.1)).map { [$0] } ?? [])
+        let momentumLabels = Array(momentumDays.suffix(windowDays))
         let momentumInput = makeMomentumInput(reports: contributors.map(\.1), labels: momentumLabels)
         let aligned = momentumLabels.count >= windowDays
             ? AlignedMomentum(
@@ -295,6 +296,14 @@ public struct PortfolioMomentum: Equatable, Sendable {
         return common.sorted()
     }
 
+    /// The day still filling, when every contributing report is on it.
+    private static func sharedOpenLabel(_ reports: [ReportDocument]) -> String? {
+        guard let label = reports.first?.period.labels.last,
+              reports.allSatisfy({ $0.period.labels.last == label && $0.generatedDate == label })
+        else { return nil }
+        return label
+    }
+
     private static func closedLabels(_ report: ReportDocument) -> [String] {
         if report.period.labels.last == report.generatedDate {
             return Array(report.period.labels.dropLast())
@@ -308,14 +317,19 @@ public struct PortfolioMomentum: Equatable, Sendable {
     ) -> MomentumInput {
         MomentumInput(
             labels: labels,
-            generatedDate: "",
             loc: sum(reports, labels: labels) { $0.series.loc },
             docLoc: sum(reports, labels: labels) { $0.series.docLoc },
             codeLoc: sum(reports, labels: labels) { $0.series.locByKind.code },
             testLoc: sum(reports, labels: labels) { $0.series.locByKind.test },
             churn: sum(reports, labels: labels) { $0.series.churn },
             added: sum(reports, labels: labels) { $0.series.added },
-            deleted: sum(reports, labels: labels) { $0.series.deleted }
+            deleted: sum(reports, labels: labels) { $0.series.deleted },
+            codeAdded: sum(reports, labels: labels) { $0.series.addedByKind.code },
+            testAdded: sum(reports, labels: labels) { $0.series.addedByKind.test },
+            codeDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.code },
+            testDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.test },
+            docAdded: sum(reports, labels: labels) { $0.series.docAddedOrZero(days: $0.period.labels.count) },
+            docDeleted: sum(reports, labels: labels) { $0.series.docDeletedOrZero(days: $0.period.labels.count) }
         )
     }
 
@@ -323,19 +337,13 @@ public struct PortfolioMomentum: Equatable, Sendable {
         reports: [ReportDocument],
         closedLabels: [String]
     ) -> ChartTimeline {
-        var labels = closedLabels
-        let openLabel = reports.first?.period.labels.last
-        let hasSharedOpenDay = openLabel != nil && reports.allSatisfy {
-            $0.period.labels.last == openLabel && $0.generatedDate == openLabel
-        }
-        if hasSharedOpenDay, let openLabel {
-            labels.append(openLabel)
-        }
+        let openLabel = sharedOpenLabel(reports)
+        let labels = closedLabels + (openLabel.map { [$0] } ?? [])
 
         return ChartTimeline(
             labels: labels,
             closedDayCount: closedLabels.count,
-            currentProgress: hasSharedOpenDay ? reports.map { $0.timeline.currentProgress }.min() : nil,
+            currentProgress: openLabel != nil ? reports.map { $0.timeline.currentProgress }.min() : nil,
             codeLoc: sum(reports, labels: labels) { $0.series.locByKind.code },
             testLoc: sum(reports, labels: labels) { $0.series.locByKind.test },
             docLoc: sum(reports, labels: labels) { $0.series.docLoc },
@@ -343,12 +351,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
             testAdded: sum(reports, labels: labels) { $0.series.addedByKind.test },
             codeDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.code },
             testDeleted: sum(reports, labels: labels) { $0.series.deletedByKind.test },
-            docAdded: sum(reports, labels: labels) {
-                $0.series.docAdded ?? Array(repeating: 0, count: $0.period.labels.count)
-            },
-            docDeleted: sum(reports, labels: labels) {
-                $0.series.docDeleted ?? Array(repeating: 0, count: $0.period.labels.count)
-            }
+            docAdded: sum(reports, labels: labels) { $0.series.docAddedOrZero(days: $0.period.labels.count) },
+            docDeleted: sum(reports, labels: labels) { $0.series.docDeletedOrZero(days: $0.period.labels.count) }
         )
     }
 

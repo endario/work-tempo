@@ -58,6 +58,30 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertEqual(portfolio.chart?.docDeleted.last, 66)
     }
 
+    func testBreakdownSumsEveryContributorOverTheHeadlineWindow() throws {
+        let first = try workspace("first")
+        let second = try workspace("second")
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [
+                first: try report(root: first.root.path, loc: 200, churn: 2,
+                                  codeAdded: 1, testAdded: 2, codeDeleted: 3, testDeleted: 4,
+                                  docAdded: 5, docDeleted: 6),
+                second: try report(root: second.root.path, loc: 300, churn: 3,
+                                   codeAdded: 10, testAdded: 20, codeDeleted: 30, testDeleted: 40,
+                                   docAdded: 50, docDeleted: 60),
+            ],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+
+        let breakdown = try XCTUnwrap(portfolio.momentum?.summary.breakdown)
+
+        XCTAssertEqual(breakdown.code, ChurnTotals(added: 11 * 30, deleted: 33 * 30))
+        XCTAssertEqual(breakdown.tests, ChurnTotals(added: 22 * 30, deleted: 44 * 30))
+        XCTAssertEqual(breakdown.docs, ChurnTotals(added: 55 * 30, deleted: 66 * 30))
+    }
+
     func testMissingReportProducesOnePartialCohort() throws {
         let first = try workspace("first")
         let second = try workspace("second")
@@ -278,7 +302,7 @@ final class PortfolioMomentumTests: XCTestCase {
         XCTAssertNil(timeline(progress: nil).openDay)
     }
 
-    func testAggregateRateStartsAtTheCohortsFirstTrackedDay() throws {
+    func testAggregateWindowStartsAtTheCohortsFirstTrackedDayAndEndsToday() throws {
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/young"))
         let idle = Array(repeating: 0, count: 195)
         let report = try ReportDocument.decode(data: makeReportData(
@@ -298,8 +322,64 @@ final class PortfolioMomentumTests: XCTestCase {
         ).get()
         let summary = try XCTUnwrap(portfolio.momentum?.summary)
 
-        XCTAssertEqual(summary.windowDays, 4)
-        XCTAssertEqual(summary.dailyChurn, 20, accuracy: 0.000_001)
+        XCTAssertEqual(summary.windowDays, 5)
+        XCTAssertEqual(summary.dailyChurn, Double(4 * 20 + 99_999) / 5, accuracy: 0.000_001)
+    }
+
+    // Today belongs to the window only when every contributor is on it.
+    func testMomentumWindowEndsWithTheSharedOpenDay() throws {
+        let first = try workspace("first")
+        let second = try workspace("second")
+        func busyToday(_ root: String) throws -> ReportDocument {
+            let churn = Array(repeating: 10, count: 60) + [1_000]
+            return try ReportDocument.decode(data: makeReportData(
+                churn: churn,
+                added: churn,
+                repositoryPaths: [root]
+            ))
+        }
+
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [first: try busyToday(first.root.path), second: try busyToday(second.root.path)],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+        let summary = try XCTUnwrap(portfolio.momentum?.summary)
+
+        XCTAssertEqual(summary.windowDays, 30)
+        XCTAssertEqual(summary.recentLabels.last, "2026-08-31")
+        XCTAssertEqual(summary.currentChurn, 2 * (29 * 10 + 1_000))
+        XCTAssertEqual(summary.breakdown.source.churn, summary.currentChurn)
+    }
+
+    func testMomentumWindowStaysOnClosedDaysWhenContributorsDisagreeOnToday() throws {
+        let first = try workspace("first")
+        let second = try workspace("second")
+        let firstReport = try ReportDocument.decode(data: makeReportData(
+            generatedDate: "2026-08-31",
+            churn: Array(repeating: 10, count: 60) + [1_000],
+            added: Array(repeating: 10, count: 60) + [1_000],
+            repositoryPaths: [first.root.path]
+        ))
+        let secondReport = try ReportDocument.decode(data: makeReportData(
+            generatedDate: "2026-08-30",
+            churn: Array(repeating: 10, count: 61),
+            added: Array(repeating: 10, count: 61),
+            repositoryPaths: [second.root.path]
+        ))
+
+        let portfolio = try PortfolioMomentum.build(
+            workspaces: [first, second],
+            reports: [first: firstReport, second: secondReport],
+            historyWindow: HistoryWindow(historyDays: 184),
+            windowDays: 30
+        ).get()
+        let summary = try XCTUnwrap(portfolio.momentum?.summary)
+
+        XCTAssertNil(portfolio.chart?.openDay)
+        XCTAssertEqual(summary.recentLabels.last, "2026-08-29")
+        XCTAssertEqual(summary.currentChurn, 30 * 20)
     }
 
 }

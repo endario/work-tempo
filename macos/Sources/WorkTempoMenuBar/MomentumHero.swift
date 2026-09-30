@@ -13,68 +13,80 @@ struct MomentumHero: View {
 
             HStack(alignment: .top, spacing: 14) {
                 metric(
-                    title: "SOURCE CHURN",
-                    value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.dailyChurn) : "--",
+                    title: "Source churn",
+                    value: snapshot.hasMomentum ? MetricFormatter.oneDecimal(snapshot.dailyChurn) : "--",
                     unit: "LINES / DAY",
                     weight: .bold,
                     color: TempoPalette.source,
-                    trend: snapshot.recentChurn + (snapshot.openDay.map { [$0.churn] } ?? []),
+                    trend: snapshot.recentChurn,
                     readout: { index in
-                        let added = self.added(at: index)
-                        let removed = self.removed(at: index)
+                        let added = snapshot.recentAdded[index]
+                        let removed = snapshot.recentDeleted[index]
                         return [
                             HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
                             HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
                             HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                         ]
                     },
-                    help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
+                    help: "Code and test lines added plus removed per day, averaged over the last \(snapshot.windowDays) days including today. Documentation is counted separately."
                 )
 
                 Divider()
-                    .frame(height: 70)
 
-                metric(
-                    title: "NET SOURCE CHANGE",
-                    value: snapshot.hasMomentum ? signed(snapshot.netGrowth) : "--",
-                    unit: "LINES",
-                    weight: .medium,
-                    color: .secondary,
-                    trend: runningNet,
-                    readout: { index in
-                        let added = self.added(at: index)
-                        let removed = self.removed(at: index)
-                        return [
-                            HoverRow(id: "day", label: "Net", value: signed(added - removed), isTotal: true),
-                            HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
-                            HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
-                            HoverRow(id: "running", label: "Running", value: signed(self.runningNet[index]), isTotal: true, separated: true),
-                        ]
-                    },
-                    help: "Code and test lines added minus removed over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
-                )
+                netChange
             }
         }
     }
 
-    nonisolated static func headlineContext(windowDays: Int, isAvailable: Bool) -> String {
-        isAvailable ? "LAST \(windowDays) CLOSED DAYS" : "HEADLINE UNAVAILABLE"
+    private var netChange: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            figure(
+                title: "Total source churn",
+                value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.windowBreakdown?.source.churn ?? 0) : "--",
+                unit: "LINES",
+                weight: .medium,
+                color: .secondary,
+                help: "Code and test lines added plus removed over the last \(snapshot.windowDays) days including today. Documentation is counted separately, so it is bracketed."
+            )
+            ReadoutTable(valueWidth: 50, rows: Self.changeRows(snapshot.hasMomentum ? snapshot.windowBreakdown : nil))
+                .padding(.top, 5)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func metric(
+    /// What the total above is made of. Documentation stays outside it.
+    static func changeRows(_ breakdown: WindowBreakdown?) -> [HoverRow] {
+        func row(_ id: String, _ label: String, _ totals: ChurnTotals?, _ swatches: [Color], brackets: Bool = false) -> HoverRow {
+            let figures = totals.map { ["+" + MetricFormatter.compact($0.added), "\u{2212}" + MetricFormatter.compact($0.deleted)] }
+                ?? ["--", "--"]
+            return HoverRow(
+                id: id,
+                label: label,
+                values: brackets && totals != nil ? figures.map { "(\($0))" } : figures,
+                swatches: swatches
+            )
+        }
+        return [
+            row("code", "Code", breakdown?.code, [TempoPalette.codeAdded, TempoPalette.codeDeleted]),
+            row("tests", "Tests", breakdown?.tests, [TempoPalette.testAdded, TempoPalette.testDeleted]),
+            row("docs", "Docs", breakdown?.docs, [TempoPalette.docsAdded, TempoPalette.docsDeleted], brackets: true),
+        ]
+    }
+
+    nonisolated static func headlineContext(windowDays: Int, isAvailable: Bool) -> String {
+        isAvailable ? "SOURCE CHURN (LAST \(windowDays) DAYS)" : "HEADLINE UNAVAILABLE"
+    }
+
+    private func figure(
         title: String,
         value: String,
         unit: String,
         weight: Font.Weight,
         color: Color,
-        trend: [Int],
-        readout: @escaping (Int) -> [HoverRow],
         help: String
     ) -> some View {
+        // The headline above names both figures, so the title is only spoken.
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(value)
                     .font(.system(size: 30, weight: weight, design: .rounded))
@@ -92,46 +104,40 @@ struct MomentumHero: View {
             // pointer already gets that day's values, and two tooltips at once
             // is one too many.
             .help(help)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(value) \(unit). \(help)")
+    }
+
+    private func metric(
+        title: String,
+        value: String,
+        unit: String,
+        weight: Font.Weight,
+        color: Color,
+        trend: [Int],
+        readout: @escaping (Int) -> [HoverRow],
+        help: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            figure(title: title, value: value, unit: unit, weight: weight, color: color, help: help)
             HeroSparkline(
                 values: trend,
-                labels: dayLabels,
+                labels: snapshot.recentLabels,
                 openIndex: openIndex,
                 readout: readout,
                 color: color
             )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(value) \(unit). \(help)")
     }
 
-    /// The open day extends both sparklines by one point. It stays out of the
-    /// headline figures above them, which count closed days only.
+    /// Today is the window's last point, counted like any other day and only
+    /// marked as partial where it is drawn.
     private var openIndex: Int? {
-        snapshot.openDay == nil ? nil : snapshot.recentChurn.count
-    }
-
-    private var runningNet: [Int] {
-        guard let open = snapshot.openDay, let last = snapshot.recentNetGrowth.last else {
-            return snapshot.recentNetGrowth
-        }
-        return snapshot.recentNetGrowth + [last + open.net]
-    }
-
-    private var dayLabels: [String] {
-        snapshot.recentLabels + (snapshot.openDay.map { [$0.label] } ?? [])
-    }
-
-    private func added(at index: Int) -> Int {
-        index == openIndex ? (snapshot.openDay?.added ?? 0) : snapshot.recentAdded[index]
-    }
-
-    private func removed(at index: Int) -> Int {
-        index == openIndex ? (snapshot.openDay?.deleted ?? 0) : snapshot.recentDeleted[index]
-    }
-
-    private func signed(_ value: Int) -> String {
-        value > 0 ? "+\(MetricFormatter.compact(value))" : MetricFormatter.compact(value)
+        snapshot.openDay.flatMap { snapshot.recentLabels.lastIndex(of: $0.label) }
     }
 }
 
@@ -145,15 +151,36 @@ private struct HeroSparkline: View {
     @State private var hovered: ChartHoverPoint?
 
     var body: some View {
+        let average = average
+        let floor = domain.lowerBound
+        let heat = heat
         Chart {
+            // Rises from the ground like any area, coloured by height: cold
+            // below the average, warm above it, deeper the further from it.
+            // Today is filled too; its dashed line below still marks it partial.
+            ForEach(points) { point in
+                AreaMark(
+                    x: .value("Day", point.index),
+                    yStart: .value("Floor", floor),
+                    yEnd: .value("Value", Double(point.value))
+                )
+                .foregroundStyle(heat)
+            }
+
+            if !points.isEmpty {
+                RuleMark(y: .value("Average", average))
+                    .foregroundStyle(color.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 0.75, dash: [2, 2]))
+            }
+
             ForEach(closedPoints) { point in
                 LineMark(
                     x: .value("Day", point.index),
                     y: .value("Value", point.value),
                     series: .value("Part", "closed")
                 )
-                .foregroundStyle(color.opacity(0.9))
-                .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(color.opacity(0.75))
+                .lineStyle(StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round))
             }
 
             // Today is real but partial, so it trails off rather than reading as
@@ -193,12 +220,37 @@ private struct HeroSparkline: View {
                 rows: readout
             )
         }
-        .frame(height: 24)
+        // Fills whatever height the total beside it leaves, so the area meets the
+        // bottom of the row rather than floating above it.
+        .frame(minHeight: 34, idealHeight: 34, maxHeight: .infinity)
         .accessibilityHidden(true)
     }
 
     private var points: [HeroTrendPoint] {
         values.enumerated().map { HeroTrendPoint(index: $0.offset, value: $0.element) }
+    }
+
+    /// The headline rate: every day in the window, today included.
+    private var average: Double {
+        values.isEmpty ? 0 : Double(values.reduce(0, +)) / Double(values.count)
+    }
+
+    private var heat: LinearGradient {
+        let turn = SparklineHeat.averageFraction(
+            average: average,
+            floor: domain.lowerBound,
+            peak: Double(values.max() ?? 0)
+        )
+        return LinearGradient(
+            stops: [
+                .init(color: TempoPalette.coldDeep.opacity(0.9), location: 0),
+                .init(color: TempoPalette.coldShallow.opacity(0.7), location: max(0, turn - 0.05)),
+                .init(color: TempoPalette.warmShallow.opacity(0.8), location: min(1, turn + 0.05)),
+                .init(color: TempoPalette.warmHot, location: 1),
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
     }
 
     private var closedPoints: [HeroTrendPoint] {
@@ -216,11 +268,9 @@ private struct HeroSparkline: View {
         return dayTitle(labels[index]) + (index == openIndex ? " \u{00B7} TO DATE" : "")
     }
 
+    /// Anchored at zero: the fill rises from the ground, so its height is the day's churn.
     private var domain: ClosedRange<Double> {
-        let minimum = min(0, values.min() ?? 0)
-        let maximum = max(0, values.max() ?? 0)
-        let span = max(1, maximum - minimum)
-        return Double(minimum) - Double(span) * 0.08...Double(maximum) + Double(span) * 0.08
+        0...Double(max(1, values.max() ?? 0)) * 1.08
     }
 }
 
@@ -268,8 +318,8 @@ private struct SparklineHoverLayer: View {
                                 width: card.width,
                                 within: geometry.size.width
                             ),
-                            // The sparkline is only 24 points tall, so the card
-                            // hangs below it rather than under the pointer.
+                            // The sparkline is short, so the card hangs below it
+                            // rather than under the pointer.
                             y: geometry.size.height + 6
                         )
                     }

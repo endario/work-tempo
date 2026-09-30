@@ -33,12 +33,18 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            Text("Work Tempo")
-                .font(.system(size: 14, weight: .semibold))
-                .fixedSize()
+            HStack(spacing: 7) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
+                Text("Work Tempo")
+                    .font(.system(size: 14, weight: .semibold))
+                    .fixedSize()
+            }
             if !model.workspaces.isEmpty {
-                // Menu chrome needs an optical shift against the 14-point header text.
-                workspaceMenu.offset(y: 0.75)
+                workspaceMenu
                 if let message = model.snapshot.noticeMessage {
                     actionButton("info.circle", help: "Report notice") {
                         showingNotice.toggle()
@@ -56,20 +62,25 @@ struct DashboardView: View {
             HStack(alignment: .center, spacing: 6) {
                 if !model.workspaces.isEmpty {
                     Text(lastUpdatedLabel)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 11))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
+                        .frame(height: 24)
                 }
-                actionButton(
-                    model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
-                    symbolSize: model.snapshot.isRefreshing ? 14 : 12,
-                    help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
-                    action: onRefresh
-                )
+                // Each button is a 24-point box around a smaller glyph, so the
+                // boxes touch and the glyphs still read as separate.
+                HStack(alignment: .center, spacing: 0) {
+                    actionButton(
+                        model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
+                        symbolSize: model.snapshot.isRefreshing ? 14 : 12,
+                        help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
+                        action: onRefresh
+                    )
                     .disabled(model.workspaces.isEmpty)
+                    actionButton("gearshape", help: "Settings", action: openSettingsWindow)
+                    actionButton("plus", symbolSize: 14, help: "Add workspace", action: onAdd)
+                }
             }
-            actionButton("gearshape", help: "Settings", action: openSettingsWindow)
-            actionButton("plus", symbolSize: 14, help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -105,7 +116,7 @@ struct DashboardView: View {
             }
         } label: {
             Text(model.scope == .all ? "All" : model.selectedWorkspace?.displayName ?? "Workspace")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -129,11 +140,11 @@ struct DashboardView: View {
                 if let progress = model.refreshProgress {
                     statusBanner(progress, symbol: "arrow.trianglehead.2.clockwise.rotate.90", opticalOffset: 0.75)
                 }
-                // The sparkline readouts hang below their 24-point plots, over
-                // the metric row that follows them in this stack.
+                sourceBanner
+                // The sparkline readout hangs below its plot, over the chart
+                // section that follows it in this stack.
                 MomentumHero(snapshot: model.snapshot)
                     .zIndex(1)
-                metricRow
                 chartSection
             }
             .padding(.horizontal, 18)
@@ -156,25 +167,49 @@ struct DashboardView: View {
         min(content, max(180, screenHeight - 120))
     }
 
-    private var metricRow: some View {
+    /// The size of the codebase, split by kind.
+    /// Source is code plus tests; documentation is counted apart from it.
+    private var sourceBanner: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(metricValue("source"))
-                .font(.system(size: 21, weight: .semibold, design: .rounded))
+                .font(.system(size: 32, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(TempoPalette.source)
             Text("SOURCE LINES")
                 .font(.caption2.weight(.semibold))
+                .fixedSize()
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text("\(metricValue("code")) code + \(metricValue("tests")) tests")
-                Text("\(metricValue("docs")) docs")
+            Spacer(minLength: 6)
+            // The breakdown never wraps; the big figure gives way first.
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                kindFigure("code", color: TempoPalette.codeDeleted)
+                Text("+").foregroundStyle(.tertiary)
+                kindFigure("tests", color: TempoPalette.testDeleted)
+                kindFigure("docs", color: TempoPalette.docsDeleted)
+                    .padding(.leading, 5)
             }
-            .font(.caption)
+            .font(.system(size: 10))
             .monospacedDigit()
-            .foregroundStyle(.secondary)
+            .fixedSize()
         }
-        .padding(.vertical, 6)
-        .overlay(alignment: .top) { sectionRule }
+        .padding(.bottom, 6)
+        .overlay(alignment: .bottom) { sectionRule }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "Source lines \(metricValue("source")): \(metricValue("code")) code plus \(metricValue("tests")) tests. Documentation \(metricValue("docs"))."
+        )
+    }
+
+    private func kindFigure(_ id: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(metricValue(id))
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+            Text(id)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func metricValue(_ id: String) -> String {
@@ -186,21 +221,21 @@ struct DashboardView: View {
             if let chart = model.snapshot.chartTimeline {
                 VStack(alignment: .leading, spacing: 4) {
                     sectionRule
-                    chartTitle(
+                    chartHeader(
                         "LINES OVER TIME",
-                        help: "Day-end code and test lines stacked as source; docs are drawn below zero for distinction, with actual counts in the hover readout"
+                        help: "Day-end code and test lines stacked as source; docs are drawn below zero for distinction, with actual counts in the hover readout",
+                        legend: kindLegend
                     )
                     SourceVolumeChart(timeline: chart)
-                    fittingLegend(kindLegend)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     sectionRule
-                    chartTitle(
+                    chartHeader(
                         "MONTHLY ACTIVITY",
-                        help: "Code and test lines added and removed per calendar month; docs are drawn below zero for distinction, with actual counts in the hover readout"
+                        help: "Code and test lines added and removed per calendar month; docs are drawn below zero for distinction, with actual counts in the hover readout",
+                        legend: changeLegend
                     )
                     MonthlyChurnChart(timeline: chart)
-                    fittingLegend(changeLegend)
                 }
             } else {
                 ContentUnavailableView(
@@ -222,6 +257,8 @@ struct DashboardView: View {
         .padding(18)
     }
 
+    private static let makerURL = URL(string: "https://2mw2lt.com/")!
+
     private var footer: some View {
         HStack {
             Button("Remove", systemImage: "minus.circle") {
@@ -229,16 +266,31 @@ struct DashboardView: View {
                 confirmRemoval(of: workspace)
             }
             .disabled(model.selectedWorkspace == nil)
+            .frame(height: 24)
+            .contentShape(Rectangle())
             Spacer()
-            Button("Quit Work Tempo", action: onQuit)
+            // The header's icon buttons are 24 points square; matching that keeps
+            // the icon under the header's plus and gives it a real click target.
+            Button("Quit Work Tempo", systemImage: "power", action: onQuit)
+                .labelStyle(.iconOnly)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
                 .keyboardShortcut("q")
-                .offset(y: -0.75)
+                .help("Quit Work Tempo")
+        }
+        // An overlay rather than a third HStack child, so it stays centred on the
+        // panel whatever the widths of Remove and Quit.
+        .overlay {
+            Link("2mw2lt", destination: Self.makerURL)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .help("2mw2lt.com")
         }
         .buttonStyle(.plain)
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.vertical, 7)
     }
 
     private func confirmRemoval(of workspace: Workspace) {
@@ -271,20 +323,7 @@ struct DashboardView: View {
         .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
-        // SF Symbols need an optical shift against the 14-point header text.
-        .offset(y: 0.75)
         .help(help)
-    }
-
-    private func fittingLegend<Content: View>(_ content: Content) -> some View {
-        ViewThatFits(in: .horizontal) {
-            content.fixedSize(horizontal: true, vertical: false)
-            ScrollView(.horizontal) {
-                content.fixedSize(horizontal: true, vertical: false)
-            }
-            .scrollIndicators(.automatic)
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var kindLegend: some View {
@@ -297,12 +336,9 @@ struct DashboardView: View {
 
     private var changeLegend: some View {
         HStack(spacing: 10) {
-            legend("Code +", swatch: TempoPalette.codeAdded, spoken: "Code added")
-            legend("Code -", swatch: TempoPalette.codeDeleted, spoken: "Code removed")
-            legend("Tests +", swatch: TempoPalette.testAdded, spoken: "Tests added")
-            legend("Tests -", swatch: TempoPalette.testDeleted, spoken: "Tests removed")
-            legend("Docs +", swatch: TempoPalette.docsAdded, spoken: "Docs added")
-            legend("Docs -", swatch: TempoPalette.docsDeleted, spoken: "Docs removed")
+            pairedLegend("Code", added: TempoPalette.codeAdded, removed: TempoPalette.codeDeleted)
+            pairedLegend("Tests", added: TempoPalette.testAdded, removed: TempoPalette.testDeleted)
+            pairedLegend("Docs", added: TempoPalette.docsAdded, removed: TempoPalette.docsDeleted)
         }
     }
 
@@ -316,6 +352,17 @@ struct DashboardView: View {
         .font(.system(size: legendFontSize, weight: .medium))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken ?? label)
+    }
+
+    /// Added and removed share a kind, so they share an entry.
+    private func pairedLegend(_ kind: String, added: Color, removed: Color) -> some View {
+        HStack(spacing: 4) {
+            KindChip(colors: [added, removed])
+            Text("\(kind) +/-").foregroundStyle(.secondary)
+        }
+        .font(.system(size: legendFontSize, weight: .medium))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(kind) added and removed")
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -358,11 +405,31 @@ struct DashboardView: View {
             .accessibilityHidden(true)
     }
 
-    private func chartTitle(_ title: String, help: String) -> some View {
-        Text(title)
+    /// The legend sits at the right of the title, and drops below it when the
+    /// two do not fit on one row.
+    private func chartHeader<Legend: View>(_ title: String, help: String, legend: Legend) -> some View {
+        let heading = Text(title)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .help(help)
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                heading
+                Spacer(minLength: 8)
+                legend.fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                heading
+                // Wider than the popover, it scrolls rather than clips.
+                ViewThatFits(in: .horizontal) {
+                    legend.fixedSize(horizontal: true, vertical: false)
+                    ScrollView(.horizontal) {
+                        legend.fixedSize(horizontal: true, vertical: false)
+                    }
+                    .scrollIndicators(.automatic)
+                }
+            }
+        }
     }
 
     private var lastUpdatedLabel: String {

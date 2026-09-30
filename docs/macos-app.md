@@ -72,7 +72,7 @@ The executable is looked up in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/
 daily churn = (source additions + source deletions over the window) / days in window
 ```
 
-The window is the trailing closed days — 30 by default, configurable in Settings and never more than the configured history window — starting no earlier than the first day the workspace had source or churn. Documentation churn and the current partial day are excluded. The second hero metric is net source LOC growth (additions minus deletions) over the same window. Both show their definitions in a tooltip.
+The window is the trailing days ending today — 30 by default, configurable in Settings and never more than the configured history window — starting no earlier than the first day the workspace had source or churn. Today's partial churn counts as a day of its own, so the rate times the days in the window is the total the hero shows beside it. Documentation churn is excluded. The second hero metric is the total source churn over the same window. Both show their definitions in a tooltip.
 
 The menu-bar item shows the same daily churn, compact, with a `/d` suffix (for example `12.3K/d`). It shows `--` before any report exists, a spinner glyph while refreshing, and a warning marker when data is stale or a refresh failed.
 
@@ -87,7 +87,7 @@ Two guards refuse to sum rather than produce a wrong number:
 - **Overlap.** If the same resolved repository path appears in two workspaces' `scope.repositories`, aggregation is refused and both workspaces and the path are named. Reports carry workspace-level series, so shared history cannot be deduplicated after the fact.
 - **Timezone.** All contributors must have been collected under the same timezone; matching date strings from different day boundaries are never summed.
 
-**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. The headline uses up to 30 labels ending there; charts use the trailing 365 closed labels, plus the open day only when every contributor has it. If the cohort lacks 30 common closed labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
+**Common watermark.** Every historical metric uses the minimum latest closed label across the cohort. Charts use the trailing 365 closed labels, plus the open day only when every contributor has it. The headline uses up to 30 labels ending at that open day when there is one, else at the watermark. If the cohort lacks 30 common labels, the rate is unavailable; if it lacks the full chart window, the charts show the common history that exists. Contributors are never dropped to satisfy history.
 
 **Summed series.** Source LOC (code and tests), documentation LOC, code and test additions and deletions, and documentation churn.
 
@@ -99,12 +99,12 @@ Individual and aggregate views share one metric input (`MomentumInput`); aggrega
 
 A 430-point popover keeps its header and footer fixed. The middle grows to fit its content up to the display's visible height with room for those controls; on shorter screens, the middle scrolls.
 
-1. Header: scope menu (All Workspaces and each workspace), an info button for fetch-fallback notices when present, last refresh, refresh, Settings, and add-workspace. Long workspace names truncate in the header and remain available in the menu and tooltip.
-2. Hero: labeled source churn per day and net source LOC change over the same closed-day window, each with a sparkline. Net change uses neutral ink because growth is not a quality verdict. The open day appears as a faded trailing segment marked to-date.
-3. Composition: latest source LOC alongside its code and test components; documentation LOC appears on its own line.
-4. **Lines over time** chart: day-end code and test lines stacked above the axis, documentation below it under a dashed guide. Documentation uses the lower half to separate it from source, not as a negative source count. The chart stacks by kind, not language, because reports carry no per-language series. Its legend sits below the chart.
-5. **Monthly activity** chart: additions and removals by kind and calendar month, with the current month occupying only its elapsed fraction. A compact `+`/`-` legend below the chart names the kind and direction. Both chart legends stay on one row and scroll horizontally if their keys outgrow the chart. The bars are not net growth.
-6. Footer: confirm removal of the selected workspace and its saved report, quit.
+1. Header: the app icon beside the name, scope menu (All Workspaces and each workspace), an info button for fetch-fallback notices when present, last refresh, refresh, Settings, and add-workspace. Long workspace names truncate in the header and remain available in the menu and tooltip.
+2. Banner: latest source LOC, large, with code and tests beside it and documentation after them, on a single row. Documentation is counted apart from source.
+3. Hero: a single `SOURCE CHURN (LAST N DAYS)` headline over two figures, with no per-figure titles: the rate per day, with a sparkline, beside the total source churn over that window, today included. The rate shows one decimal place (`28.5K`). The sparkline is an area chart rising from zero and coloured by height against the window's average, which a faint dashed line marks: ice deepening to blue toward the ground below it, amber burning to red toward the peak above it. The open day is filled too, but its line trails off as a faded dashed segment marked to-date, and it is part of the average. The area stretches to fill the row's height, so it meets the bottom of the row. The total is the same size as the rate but has no sparkline; beneath it, code, tests and documentation (bracketed) each show what was added and removed. It uses neutral ink.
+4. **Lines over time** chart: day-end code and test lines stacked above the axis, documentation below it under a dashed guide. Documentation uses the lower half to separate it from source, not as a negative source count. The chart stacks by kind, not language, because reports carry no per-language series. Its legend sits at the right of the chart's title.
+5. **Monthly activity** chart: additions and removals by kind and calendar month, with the current month occupying only its elapsed fraction. Its legend has one entry per kind, `Code +/-`, whose paired block shows the added and removed hues. Both chart legends share the title's row, drop below it when they do not fit, and scroll horizontally if they still outgrow the popover. The bars are not net growth.
+6. Footer: confirm removal of the selected workspace and its saved report, quit, and a faded `2mw2lt` link to 2mw2lt.com centred between them.
 
 Both charts and the sparklines respond to the pointer with a readout. Where a readout shows churn it gives the total first, then the additions and removals it is made of. Chart accessibility descriptors expose dated code, test, and separate documentation values. Hue names the kind and lightness names the direction; the labels remain in text ink. The Dock icon is suppressed with `LSUIElement`.
 
@@ -115,8 +115,8 @@ three values, persisted via `UserDefaults`:
 
 - **History** — how far back the collector fetches and the charts
   display. Default 12 months (365 days).
-- **Headline window** — the rolling window behind the churn/day and net
-  growth hero metrics. Default 30 days, never more than the configured
+- **Headline window** — the rolling window behind the churn/day and total
+  churn hero metrics. Default 30 days, never more than the configured
   history window.
 - **Refresh cadence** — how often the app checks for background
   refreshes, and how old a report can get before it's flagged stale in

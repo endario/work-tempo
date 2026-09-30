@@ -10,6 +10,16 @@ final class DebugPreviewDelegate: NSObject, NSApplicationDelegate {
         guard ProcessInfo.processInfo.environment["WORK_TEMPO_PREVIEW"] == "1" else { return }
         if ProcessInfo.processInfo.environment["WORK_TEMPO_DARK_PREVIEW"] == "1" {
             NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        } else if ProcessInfo.processInfo.environment["WORK_TEMPO_LIGHT_PREVIEW"] == "1" {
+            NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        }
+
+        // An unbundled debug binary has no icon of its own to show in the header.
+        let icon = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Assets/WorkTempo.icns")
+        if let image = NSImage(contentsOf: icon) {
+            NSApplication.shared.applicationIconImage = image
         }
 
         let model = AppModel()
