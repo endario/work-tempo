@@ -503,7 +503,7 @@ struct ChartReadout: View {
 
     var width: CGFloat {
         let labelColumn: CGFloat = 62
-        let valueColumn: CGFloat = columns.count > 1 ? 44 : 56
+        let valueColumn: CGFloat = table.isTabular ? 44 : 56
         return labelColumn + valueColumn * CGFloat(max(1, columns.count)) + (table.showsSwatches ? 22 : 12)
     }
 
@@ -539,7 +539,7 @@ struct ReadoutTable: View {
 
     /// Rows with several figures line them up in fixed columns; the header
     /// above them is optional.
-    private var isTabular: Bool {
+    var isTabular: Bool {
         rows.contains { $0.values.count > 1 }
     }
 

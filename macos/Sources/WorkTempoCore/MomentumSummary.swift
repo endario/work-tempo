@@ -67,8 +67,8 @@ public struct MomentumInput: Equatable, Sendable {
             testAdded: report.series.addedByKind.test,
             codeDeleted: report.series.deletedByKind.code,
             testDeleted: report.series.deletedByKind.test,
-            docAdded: report.series.docAdded ?? Array(repeating: 0, count: days),
-            docDeleted: report.series.docDeleted ?? Array(repeating: 0, count: days)
+            docAdded: report.series.docAddedOrZero(days: days),
+            docDeleted: report.series.docDeletedOrZero(days: days)
         )
     }
 }

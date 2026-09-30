@@ -145,6 +145,12 @@ public struct MetricSeries: Decodable, Sendable {
     public let language: [LanguageSeries]
 }
 
+extension MetricSeries {
+    /// Reports from before documentation churn was split out carry neither series.
+    func docAddedOrZero(days: Int) -> [Int] { docAdded ?? Array(repeating: 0, count: days) }
+    func docDeletedOrZero(days: Int) -> [Int] { docDeleted ?? Array(repeating: 0, count: days) }
+}
+
 public struct KindSeries: Decodable, Sendable {
     public let code: [Int]
     public let test: [Int]

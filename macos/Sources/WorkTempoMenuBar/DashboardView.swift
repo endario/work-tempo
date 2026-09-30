@@ -34,7 +34,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             HStack(spacing: 7) {
-                Image(nsImage: NSApp.applicationIconImage)
+                Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: 24, height: 24)
@@ -72,16 +72,20 @@ struct DashboardView: View {
                         // measured from the render at 14-point title text.
                         .offset(y: 1.5)
                 }
-                actionButton(
-                    model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
-                    symbolSize: model.snapshot.isRefreshing ? 14 : 12,
-                    help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
-                    action: onRefresh
-                )
+                // Each button is a 24-point box around a smaller glyph, so the
+                // boxes touch and the glyphs still read as separate.
+                HStack(alignment: .center, spacing: 0) {
+                    actionButton(
+                        model.snapshot.isRefreshing ? "xmark" : "arrow.clockwise",
+                        symbolSize: model.snapshot.isRefreshing ? 14 : 12,
+                        help: model.snapshot.isRefreshing ? "Cancel refresh" : "Refresh",
+                        action: onRefresh
+                    )
                     .disabled(model.workspaces.isEmpty)
+                    actionButton("gearshape", help: "Settings", action: openSettingsWindow)
+                    actionButton("plus", symbolSize: 14, help: "Add workspace", action: onAdd)
+                }
             }
-            actionButton("gearshape", help: "Settings", action: openSettingsWindow)
-            actionButton("plus", symbolSize: 14, help: "Add workspace", action: onAdd)
         }
         .padding(.horizontal, 18)
         .padding(.top, 16)
@@ -413,7 +417,14 @@ struct DashboardView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 heading
-                legend.fixedSize(horizontal: true, vertical: false)
+                // Wider than the popover, it scrolls rather than clips.
+                ViewThatFits(in: .horizontal) {
+                    legend.fixedSize(horizontal: true, vertical: false)
+                    ScrollView(.horizontal) {
+                        legend.fixedSize(horizontal: true, vertical: false)
+                    }
+                    .scrollIndicators(.automatic)
+                }
             }
         }
     }
