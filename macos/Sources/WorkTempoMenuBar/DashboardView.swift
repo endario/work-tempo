@@ -264,13 +264,16 @@ struct DashboardView: View {
 
     private var footer: some View {
         HStack {
-            Button("Remove", systemImage: "minus.circle") {
+            // Leading-aligned so the glyph sits on the panel's left margin.
+            Button("Remove workspace", systemImage: "minus.circle") {
                 guard let workspace = model.selectedWorkspace else { return }
                 confirmRemoval(of: workspace)
             }
+            .labelStyle(.iconOnly)
             .disabled(model.selectedWorkspace == nil)
-            .frame(height: 24)
+            .frame(width: 24, height: 24, alignment: .leading)
             .contentShape(Rectangle())
+            .help(model.selectedWorkspace.map { "Remove \($0.displayName)\u{2026}" } ?? "Choose a workspace to remove it")
             Spacer()
             // The header's icon buttons are 24 points square; matching that keeps
             // the icon under the header's plus and gives it a real click target.
@@ -286,8 +289,9 @@ struct DashboardView: View {
         .overlay {
             Link("2mw2lt", destination: Self.makerURL)
                 .font(.system(size: 9))
+                .underline()
                 .foregroundStyle(.tertiary)
-                .help("2mw2lt.com")
+                .help("Too Much Work, Too Little Time\nhttps://2mw2lt.com")
         }
         .buttonStyle(.plain)
         .font(.caption)
