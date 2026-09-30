@@ -40,9 +40,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public let metrics: [SnapshotMetric]
     public let hasMomentum: Bool
     public let dailyChurn: Double
-    public let netGrowth: Int
     public let recentChurn: [Int]
-    public let recentNetGrowth: [Int]
     public let recentLabels: [String]
     public let recentAdded: [Int]
     public let recentDeleted: [Int]
@@ -79,9 +77,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             metrics = Self.emptyMetrics
             hasMomentum = false
             dailyChurn = 0
-            netGrowth = 0
             recentChurn = []
-            recentNetGrowth = []
             recentLabels = []
             recentAdded = []
             recentDeleted = []
@@ -114,9 +110,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         ]
         hasMomentum = true
         dailyChurn = summary.dailyChurn
-        netGrowth = summary.netGrowth
         recentChurn = summary.recentChurn
-        recentNetGrowth = summary.recentNetGrowth
         recentLabels = summary.recentLabels
         recentAdded = summary.recentAdded
         recentDeleted = summary.recentDeleted
@@ -177,9 +171,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         ]
         hasMomentum = summary != nil
         dailyChurn = summary?.dailyChurn ?? 0
-        netGrowth = summary?.netGrowth ?? 0
         recentChurn = summary?.recentChurn ?? []
-        recentNetGrowth = summary?.recentNetGrowth ?? []
         recentLabels = summary?.recentLabels ?? []
         recentAdded = summary?.recentAdded ?? []
         recentDeleted = summary?.recentDeleted ?? []

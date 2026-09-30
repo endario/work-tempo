@@ -19,10 +19,6 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.recentChurn, Array(repeating: 10, count: 29) + [1_000])
         XCTAssertEqual(summary.currentChurn, 1_290)
         XCTAssertEqual(summary.dailyChurn, 43, accuracy: 0.000_001)
-        XCTAssertEqual(summary.netGrowth, 287)
-        XCTAssertEqual(summary.recentNetGrowth.count, 30)
-        XCTAssertEqual(summary.recentNetGrowth.first, 3)
-        XCTAssertEqual(summary.recentNetGrowth.last, 287)
     }
 
     // The rate times the days in the window is the total the hero shows.
@@ -116,7 +112,6 @@ final class MomentumSummaryTests: XCTestCase {
 
         XCTAssertEqual(summary.breakdown.source, ChurnTotals(added: 210, deleted: 90))
         XCTAssertEqual(summary.breakdown.source.churn, summary.currentChurn)
-        XCTAssertEqual(summary.breakdown.source.net, summary.netGrowth)
         XCTAssertEqual(summary.breakdown.docs.churn, 6_000, "docs stay out of source")
     }
 
@@ -153,7 +148,6 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.dailyChurn, 20, accuracy: 0.000_001)
         XCTAssertEqual(summary.recentChurn.count, 6)
         XCTAssertEqual(summary.recentLabels.count, 6)
-        XCTAssertEqual(summary.netGrowth, 24)
     }
 
     func testFirstTrackedDayCountsChurnThatLeavesNoLinesBehind() throws {
@@ -190,6 +184,9 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(MetricFormatter.compact(999), "999")
         XCTAssertEqual(MetricFormatter.compact(1_200), "1.2K")
         XCTAssertEqual(MetricFormatter.compact(1_180_141), "1.18M")
+        XCTAssertEqual(MetricFormatter.compact(999_499), "999K")
+        XCTAssertEqual(MetricFormatter.compact(999_600), "1M")
+        XCTAssertEqual(MetricFormatter.compact(-999_600), "-1M")
     }
 
     // 29K and 28.5K read differently once the total is beside them.
