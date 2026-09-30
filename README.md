@@ -76,6 +76,8 @@ work-tempo --root ~/projects/my-app --no-html --json /tmp/work-tempo.json
 work-tempo --root ~/projects/my-app --forecast
 ```
 
+The daily view also prints the macOS app's headline: source churn per day over the same window, today included, with added and removed lines per kind.
+
 Period boundaries use the active system timezone, falling back to UTC. The resolved timezone is included in JSON and HTML report metadata.
 
 ## Workspace Scope
