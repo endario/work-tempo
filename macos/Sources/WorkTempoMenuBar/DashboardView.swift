@@ -257,7 +257,7 @@ struct DashboardView: View {
         .padding(18)
     }
 
-    private static let makerURL = URL(string: "http://2mw2lt.com/")!
+    private static let makerURL = URL(string: "https://2mw2lt.com/")!
 
     private var footer: some View {
         HStack {
