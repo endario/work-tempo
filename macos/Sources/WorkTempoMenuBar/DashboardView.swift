@@ -16,7 +16,7 @@ struct DashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().padding(.top, 14)
+            Divider().padding(.top, 9)
 
             if model.workspaces.isEmpty {
                 emptyState
@@ -85,7 +85,7 @@ struct DashboardView: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 16)
+        .padding(.top, 11)
         .padding(.bottom, 2)
         .onChange(of: model.snapshot.noticeMessage) { _, message in
             if message == nil { showingNotice = false }
@@ -447,17 +447,12 @@ private extension VerticalAlignment {
         static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
     }
 
-    /// The row's shared line. Icon boxes sit centred on it; text sits on it by
-    /// baseline (see `onHeaderLine`), because centred boxes of different font
-    /// sizes put their baselines at different heights.
     static let headerLine = VerticalAlignment(HeaderLine.self)
 }
 
 private extension View {
-    /// Puts the text's baseline a fixed distance below the header line, about
-    /// half the cap height of the 11 to 14 point sizes used in the row, so
-    /// every text run shares one baseline and its caps straddle the icons'
-    /// centre. Measured against those sizes; re-measure if they change.
+    /// 4.5pt is half the cap height of the row's 11 to 14 point text; re-measure
+    /// if those sizes change.
     func onHeaderLine() -> some View {
         alignmentGuide(.headerLine) { $0[.firstTextBaseline] - 4.5 }
     }
