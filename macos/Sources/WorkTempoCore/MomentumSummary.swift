@@ -109,9 +109,7 @@ public struct MomentumSummary: Equatable, Sendable {
     public let docsLOC: Int
     public let currentChurn: Int
     public let dailyChurn: Double
-    public let netGrowth: Int
     public let recentChurn: [Int]
-    public let recentNetGrowth: [Int]
     public let recentLabels: [String]
     public let recentAdded: [Int]
     public let recentDeleted: [Int]
@@ -142,15 +140,6 @@ public struct MomentumSummary: Equatable, Sendable {
         recentDeleted = Array(input.deleted[currentStart..<end])
         currentChurn = recentChurn.reduce(0, +)
         dailyChurn = Double(currentChurn) / Double(windowDays)
-        var cumulativeGrowth = 0
-        recentNetGrowth = zip(
-            input.added[currentStart..<end],
-            input.deleted[currentStart..<end]
-        ).map { added, deleted in
-            cumulativeGrowth += added - deleted
-            return cumulativeGrowth
-        }
-        netGrowth = recentNetGrowth.last ?? 0
 
         func total(_ added: [Int], _ deleted: [Int]) -> ChurnTotals {
             ChurnTotals(

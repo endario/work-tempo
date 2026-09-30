@@ -79,7 +79,6 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.metrics.map(\.value), ["12K", "8K", "4.3K", "900"])
         XCTAssertTrue(snapshot.hasMomentum)
         XCTAssertEqual(snapshot.recentChurn.count, 30)
-        XCTAssertEqual(snapshot.recentNetGrowth.last, snapshot.netGrowth)
     }
 
     // The window ends today, so the total by kind counts today's lines.
@@ -255,7 +254,6 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertTrue(snapshot.hasMomentum)
         XCTAssertEqual(snapshot.menuValue, "0/d")
         XCTAssertEqual(snapshot.dailyChurn, 0)
-        XCTAssertEqual(snapshot.netGrowth, 0)
     }
 
     func testLastFetchedSourceNoticeSurvivesAggregateCoverageWarning() throws {
