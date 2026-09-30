@@ -1407,19 +1407,65 @@ def format_with_docs(source_lines: int, doc_lines: int) -> str:
     return f"{source} ({format_int(doc_lines)})"
 
 
+def _trimmed(value: float, places: int) -> str:
+    return f"{value:.{places}f}".rstrip("0").rstrip(".") if places else f"{value:.0f}"
+
+
 def format_compact(n: int) -> str:
     sign = "-" if n < 0 else ""
     n_abs = abs(n)
-    if n_abs >= 1_000_000:
-        value = n_abs / 1_000_000
-        suffix = "M"
-    elif n_abs >= 1_000:
-        value = n_abs / 1_000
-        suffix = "K"
-    else:
+    if n_abs < 1_000:
         return f"{n:,}" if n else "-"
-    formatted = f"{value:.1f}".rstrip("0").rstrip(".")
-    return f"{sign}{formatted}{suffix}"
+    if n_abs < 1_000_000:
+        thousands = _trimmed(n_abs / 1_000, 1 if n_abs < 10_000 else 0)
+        if thousands != "1000":
+            return f"{sign}{thousands}K"
+    return f"{sign}{_trimmed(n_abs / 1_000_000, 2 if n_abs < 10_000_000 else 1)}M"
+
+
+def format_rate(value: float) -> str:
+    n_abs = abs(value)
+    sign = "-" if value < 0 else ""
+    if int(n_abs + 0.5) < 1_000:
+        if 0 < n_abs < 10 and n_abs != int(n_abs + 0.5):
+            return f"{sign}{_trimmed(n_abs, 1)}"
+        return f"{sign}{int(n_abs + 0.5):,}"
+    thousands = int(n_abs / 100 + 0.5) / 10
+    if thousands < 1_000:
+        return f"{sign}{thousands:.1f}K"
+    return f"{sign}{int(n_abs / 100_000 + 0.5) / 10:.1f}M"
+
+
+def headline_window(loc_series: list[int], churn_series: list[int], max_days: int) -> tuple[int, int]:
+    end = len(loc_series)
+    first_tracked = next((i for i in range(end) if loc_series[i] > 0 or churn_series[i] > 0), 0)
+    start = max(first_tracked, end - max_days)
+    return start, max(1, end - start)
+
+
+def headline_summary(
+    loc_series: list[int],
+    churn_series: list[int],
+    added_by_kind: dict[str, list[int]],
+    deleted_by_kind: dict[str, list[int]],
+    doc_added: list[int],
+    doc_deleted: list[int],
+    max_days: int,
+) -> list[str]:
+    start, days = headline_window(loc_series, churn_series, max_days)
+
+    def totals(added: list[int], deleted: list[int]) -> str:
+        return f"+{sum(added[start:]):,} -{sum(deleted[start:]):,}"
+
+    churn = sum(churn_series[start:])
+    return [
+        f"Source churn, last {days} days (today included): {churn:,} lines, {format_rate(churn / days)}/day",
+        "  Code "
+        + totals(added_by_kind["code"], deleted_by_kind["code"])
+        + " | Test "
+        + totals(added_by_kind["test"], deleted_by_kind["test"])
+        + f" | Docs ({totals(doc_added, doc_deleted)})",
+    ]
 
 
 def format_signed_compact(n: int) -> str:
@@ -2264,6 +2310,10 @@ def _render_html(
     current_test_loc = loc_kind_series.get("test", [0])[-1] if loc_kind_series.get("test") else 0
     test_share = (current_test_loc / end_loc) if end_loc else 0
     total_test_churn = sum(churn_kind_series.get("test", []))
+    churn_hint = "source churn; doc churn in parentheses"
+    if period == "day":
+        _, window_days = headline_window(loc_series, churn_series, len(loc_series))
+        churn_hint = f"{format_rate(total_churn / window_days)}/day over {window_days} days; doc churn in parentheses"
     forecast_points = forecast_points_override
     if forecast_points is None:
         forecast_points = (
@@ -2285,7 +2335,7 @@ def _render_html(
         {"label": "Test LOC", "value": format_compact(current_test_loc), "hint": format_pct(test_share)},
         {"label": "Net Growth", "value": format_signed_compact(net_loc), "hint": format_pct(growth_pct)},
         {"label": f"Latest {period_header}", "value": format_signed_compact(latest_delta), "hint": f"{months_labels[-1]} LOC change"},
-        {"label": "Total Churn", "value": format_with_docs_compact(total_churn, total_doc_churn), "hint": "source churn; doc churn in parentheses"},
+        {"label": "Total Churn", "value": format_with_docs_compact(total_churn, total_doc_churn), "hint": churn_hint},
         {"label": "Test Churn", "value": format_compact(total_test_churn), "hint": "period total"},
         {"label": "Churn / LOC", "value": f"{churn_ratio:.1f}x", "hint": "period total vs current"},
     ]
@@ -2848,6 +2898,18 @@ def main() -> int:
 
     print()
     print_table(header, rows)
+
+    if args.period == "day":
+        print()
+        print("\n".join(headline_summary(
+            loc_series,
+            churn_series,
+            added_kind_series,
+            deleted_kind_series,
+            doc_added_series,
+            doc_deleted_series,
+            args.days,
+        )))
 
     if args.languages:
         print()

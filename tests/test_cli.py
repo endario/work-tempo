@@ -1943,6 +1943,38 @@ class LocAnalysisScriptTest(unittest.TestCase):
         self.assertNotIn("LOC Snapshot forecast is informational only", html)
         self.assertIn("docs shown as guide", html)
 
+    def test_daily_html_total_churn_card_carries_the_rate_the_app_shows(self) -> None:
+        tempo = load_script("tempo_daily_rate_html_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "report.html"
+            document = make_report_document(
+                tempo,
+                ["2026-07-29", "2026-07-30", "2026-07-31"],
+                [100, 120, 130],
+                [10, 12, 13],
+                [5, 6, 7],
+                [1, 1, 1],
+                [4, 5, 6],
+                [1, 1, 1],
+                {"code": [80, 95, 100], "test": [20, 25, 30]},
+                {"code": [4, 5, 6], "test": [1, 1, 1]},
+                {"code": [3, 4, 5], "test": [1, 1, 1]},
+                {"code": [1, 1, 1], "test": [0, 0, 0]},
+                {"Python": [80, 95, 100], "TypeScript": [20, 25, 30]},
+                [("(parent)", 130, 13, 100, 30)],
+                [("Python", 100), ("TypeScript", 30)],
+                {"vendor_like": [], "non_product": [], "unavailable_submodule": [], "unavailable_extra": []},
+                False,
+                timezone.utc,
+                "day",
+            )
+            tempo.write_html(out, document)
+            html = out.read_text(encoding="utf-8")
+
+        data = json.loads(html.split("const DATA = ", 1)[1].split(";\n", 1)[0])
+        card = next(stat for stat in data["stats"] if stat["label"] == "Total Churn")
+        self.assertEqual(card["hint"], "6/day over 3 days; doc churn in parentheses")
+
     def test_extra_repo_resolution_handles_parent_worktrees(self) -> None:
         tempo = load_script("tempo_worktree_repos_test", "src/work_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:
@@ -2433,6 +2465,80 @@ class LocAnalysisScriptTest(unittest.TestCase):
         ):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 tempo._extra_repo_list(value, "extra_repos")
+
+    def test_compact_figures_match_the_menu_bar_app(self) -> None:
+        tempo = load_script("tempo_compact_test", "src/work_tempo/cli.py")
+
+        expected = {
+            999: "999", 1_000: "1K", 9_365: "9.4K", 9_999: "10K", 29_468: "29K", 195_300: "195K",
+            999_600: "1M", 1_940_000: "1.94M", 9_999_600: "10M", 12_400_000: "12.4M", -1_200: "-1.2K",
+        }
+        for value, text in expected.items():
+            with self.subTest(value=value):
+                self.assertEqual(tempo.format_compact(value), text)
+
+    def test_rate_keeps_one_decimal_on_thousands_like_the_app(self) -> None:
+        tempo = load_script("tempo_rate_test", "src/work_tempo/cli.py")
+
+        expected = {
+            0: "0", 0.33: "0.3", 2.0: "2", 459.4: "459", 999.5: "1.0K",
+            28_000: "28.0K", 28_533: "28.5K", 999_960: "1.0M", 1_234_567: "1.2M",
+        }
+        for value, text in expected.items():
+            with self.subTest(value=value):
+                self.assertEqual(tempo.format_rate(value), text)
+
+    def test_headline_window_ends_today_and_starts_no_earlier_than_first_tracked_day(self) -> None:
+        tempo = load_script("tempo_window_test", "src/work_tempo/cli.py")
+
+        self.assertEqual(tempo.headline_window([100] * 40, [5] * 40, 30), (10, 30))
+        self.assertEqual(tempo.headline_window([0, 0, 0, 5, 5], [0, 0, 0, 3, 0], 30), (3, 2))
+        # A first day that adds source and deletes it again ends at zero lines.
+        self.assertEqual(tempo.headline_window([0, 0, 0, 100], [0, 10, 0, 0], 30), (1, 3))
+        self.assertEqual(tempo.headline_window([0, 0], [0, 0], 30), (0, 2))
+
+    def test_headline_summary_names_the_window_rate_and_each_kind(self) -> None:
+        tempo = load_script("tempo_summary_test", "src/work_tempo/cli.py")
+
+        lines = tempo.headline_summary(
+            [0, 0, 100, 100, 100],
+            [0, 0, 20, 30, 50],
+            {"code": [0, 0, 10, 20, 30], "test": [0, 0, 4, 6, 8]},
+            {"code": [0, 0, 4, 0, 10], "test": [0, 0, 2, 4, 2]},
+            [0, 0, 1, 1, 1],
+            [0, 0, 0, 0, 2],
+            30,
+        )
+
+        self.assertEqual(lines, [
+            "Source churn, last 3 days (today included): 100 lines, 33/day",
+            "  Code +60 -14 | Test +18 -8 | Docs (+3 -2)",
+        ])
+
+    def test_daily_cli_prints_the_headline_the_app_shows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "fixture"
+            root.mkdir()
+            make_tracked_repo(root)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "src/work_tempo/cli.py"),
+                    "--root", str(root),
+                    "--period", "day", "--days", "3",
+                    "--workers", "1", "--no-cache", "--no-html",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertIn(
+            "Source churn, last 1 days (today included): 1 lines, 1/day\n"
+            "  Code +1 -0 | Test +0 -0 | Docs (+0 -0)",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":
