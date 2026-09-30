@@ -57,7 +57,7 @@ public struct ChartTimeline: Equatable, Sendable {
 }
 
 /// Today, when every contributing report shares it. Its churn is real but
-/// partial, so it is kept out of the headline rate and marked where it is drawn.
+/// partial, so it is marked where it is drawn.
 public struct OpenDay: Equatable, Sendable {
     public let label: String
     public let added: Int
@@ -82,18 +82,11 @@ public extension ChartTimeline {
     /// Source only: documentation is counted separately everywhere else, and the
     /// rate this sits beside excludes it.
     var openDay: OpenDay? {
-        guard let label = labels.last, let source = openDayBreakdown?.source else { return nil }
-        return OpenDay(label: label, added: source.added, deleted: source.deleted)
-    }
-
-    /// Today's churn by kind, for the figures that count the open day. The
-    /// closed-day headline rate leaves it out.
-    var openDayBreakdown: WindowBreakdown? {
         guard currentProgress != nil, let index = labels.indices.last else { return nil }
-        return WindowBreakdown(
-            code: ChurnTotals(added: codeAdded[index], deleted: codeDeleted[index]),
-            tests: ChurnTotals(added: testAdded[index], deleted: testDeleted[index]),
-            docs: ChurnTotals(added: docAdded[index], deleted: docDeleted[index])
+        return OpenDay(
+            label: labels[index],
+            added: codeAdded[index] + testAdded[index],
+            deleted: codeDeleted[index] + testDeleted[index]
         )
     }
 
@@ -254,7 +247,8 @@ public struct PortfolioMomentum: Equatable, Sendable {
         }
 
         let commonClosed = commonClosedLabels(contributors.map(\.1))
-        let momentumLabels = Array(commonClosed.suffix(min(windowDays, commonClosed.count)))
+        let momentumDays = commonClosed + (sharedOpenLabel(contributors.map(\.1)).map { [$0] } ?? [])
+        let momentumLabels = Array(momentumDays.suffix(windowDays))
         let momentumInput = makeMomentumInput(reports: contributors.map(\.1), labels: momentumLabels)
         let aligned = momentumLabels.count >= windowDays
             ? AlignedMomentum(
@@ -302,6 +296,14 @@ public struct PortfolioMomentum: Equatable, Sendable {
         return common.sorted()
     }
 
+    /// The day still filling, when every contributing report is on it.
+    private static func sharedOpenLabel(_ reports: [ReportDocument]) -> String? {
+        guard let label = reports.first?.period.labels.last,
+              reports.allSatisfy({ $0.period.labels.last == label && $0.generatedDate == label })
+        else { return nil }
+        return label
+    }
+
     private static func closedLabels(_ report: ReportDocument) -> [String] {
         if report.period.labels.last == report.generatedDate {
             return Array(report.period.labels.dropLast())
@@ -315,7 +317,6 @@ public struct PortfolioMomentum: Equatable, Sendable {
     ) -> MomentumInput {
         MomentumInput(
             labels: labels,
-            generatedDate: "",
             loc: sum(reports, labels: labels) { $0.series.loc },
             docLoc: sum(reports, labels: labels) { $0.series.docLoc },
             codeLoc: sum(reports, labels: labels) { $0.series.locByKind.code },
@@ -336,19 +337,13 @@ public struct PortfolioMomentum: Equatable, Sendable {
         reports: [ReportDocument],
         closedLabels: [String]
     ) -> ChartTimeline {
-        var labels = closedLabels
-        let openLabel = reports.first?.period.labels.last
-        let hasSharedOpenDay = openLabel != nil && reports.allSatisfy {
-            $0.period.labels.last == openLabel && $0.generatedDate == openLabel
-        }
-        if hasSharedOpenDay, let openLabel {
-            labels.append(openLabel)
-        }
+        let openLabel = sharedOpenLabel(reports)
+        let labels = closedLabels + (openLabel.map { [$0] } ?? [])
 
         return ChartTimeline(
             labels: labels,
             closedDayCount: closedLabels.count,
-            currentProgress: hasSharedOpenDay ? reports.map { $0.timeline.currentProgress }.min() : nil,
+            currentProgress: openLabel != nil ? reports.map { $0.timeline.currentProgress }.min() : nil,
             codeLoc: sum(reports, labels: labels) { $0.series.locByKind.code },
             testLoc: sum(reports, labels: labels) { $0.series.locByKind.test },
             docLoc: sum(reports, labels: labels) { $0.series.docLoc },

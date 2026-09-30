@@ -14,21 +14,21 @@ struct MomentumHero: View {
             HStack(alignment: .top, spacing: 14) {
                 metric(
                     title: "Source churn",
-                    value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.dailyChurn) : "--",
+                    value: snapshot.hasMomentum ? MetricFormatter.oneDecimal(snapshot.dailyChurn) : "--",
                     unit: "LINES / DAY",
                     weight: .bold,
                     color: TempoPalette.source,
-                    trend: snapshot.recentChurn + (snapshot.openDay.map { [$0.churn] } ?? []),
+                    trend: snapshot.recentChurn,
                     readout: { index in
-                        let added = self.added(at: index)
-                        let removed = self.removed(at: index)
+                        let added = snapshot.recentAdded[index]
+                        let removed = snapshot.recentDeleted[index]
                         return [
                             HoverRow(id: "churn", label: "Churn", value: MetricFormatter.compact(added + removed), isTotal: true),
                             HoverRow(id: "added", label: "Added", value: MetricFormatter.compact(added), separated: true),
                             HoverRow(id: "removed", label: "Removed", value: MetricFormatter.compact(removed)),
                         ]
                     },
-                    help: "Code and test lines added plus removed per day, over the last \(snapshot.windowDays) closed days. Documentation is counted separately."
+                    help: "Code and test lines added plus removed per day, averaged over the last \(snapshot.windowDays) days including today. Documentation is counted separately."
                 )
 
                 Divider()
@@ -42,13 +42,13 @@ struct MomentumHero: View {
         VStack(alignment: .leading, spacing: 2) {
             figure(
                 title: "Total source churn",
-                value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.toDateBreakdown?.source.churn ?? 0) : "--",
+                value: snapshot.hasMomentum ? MetricFormatter.compact(snapshot.windowBreakdown?.source.churn ?? 0) : "--",
                 unit: "LINES",
                 weight: .medium,
                 color: .secondary,
-                help: "Code and test lines added plus removed over the last \(snapshot.windowDays) closed days and today so far. The daily rate beside it counts closed days only. Documentation is counted separately, so it is bracketed."
+                help: "Code and test lines added plus removed over the last \(snapshot.windowDays) days including today. Documentation is counted separately, so it is bracketed."
             )
-            ReadoutTable(valueWidth: 50, rows: Self.changeRows(snapshot.hasMomentum ? snapshot.toDateBreakdown : nil))
+            ReadoutTable(valueWidth: 50, rows: Self.changeRows(snapshot.hasMomentum ? snapshot.windowBreakdown : nil))
                 .padding(.top, 5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -123,33 +123,21 @@ struct MomentumHero: View {
             figure(title: title, value: value, unit: unit, weight: weight, color: color, help: help)
             HeroSparkline(
                 values: trend,
-                labels: dayLabels,
+                labels: snapshot.recentLabels,
                 openIndex: openIndex,
                 readout: readout,
                 color: color
             )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(value) \(unit). \(help)")
     }
 
-    /// The open day extends both sparklines by one point. It stays out of the
-    /// headline figures above them, which count closed days only.
+    /// Today is the window's last point, counted like any other day and only
+    /// marked as partial where it is drawn.
     private var openIndex: Int? {
-        snapshot.openDay == nil ? nil : snapshot.recentChurn.count
-    }
-
-    private var dayLabels: [String] {
-        snapshot.recentLabels + (snapshot.openDay.map { [$0.label] } ?? [])
-    }
-
-    private func added(at index: Int) -> Int {
-        index == openIndex ? (snapshot.openDay?.added ?? 0) : snapshot.recentAdded[index]
-    }
-
-    private func removed(at index: Int) -> Int {
-        index == openIndex ? (snapshot.openDay?.deleted ?? 0) : snapshot.recentDeleted[index]
+        snapshot.openDay.flatMap { snapshot.recentLabels.lastIndex(of: $0.label) }
     }
 }
 
@@ -179,7 +167,7 @@ private struct HeroSparkline: View {
                 .foregroundStyle(heat)
             }
 
-            if !closedPoints.isEmpty {
+            if !points.isEmpty {
                 RuleMark(y: .value("Average", average))
                     .foregroundStyle(color.opacity(0.35))
                     .lineStyle(StrokeStyle(lineWidth: 0.75, dash: [2, 2]))
@@ -232,7 +220,9 @@ private struct HeroSparkline: View {
                 rows: readout
             )
         }
-        .frame(height: 34)
+        // Fills whatever height the total beside it leaves, so the area meets the
+        // bottom of the row rather than floating above it.
+        .frame(minHeight: 34, idealHeight: 34, maxHeight: .infinity)
         .accessibilityHidden(true)
     }
 
@@ -240,11 +230,9 @@ private struct HeroSparkline: View {
         values.enumerated().map { HeroTrendPoint(index: $0.offset, value: $0.element) }
     }
 
-    /// Of the closed days only, as the headline is: a partial day would drag it
-    /// down.
+    /// The headline rate: every day in the window, today included.
     private var average: Double {
-        let closed = closedPoints.map(\.value)
-        return closed.isEmpty ? 0 : Double(closed.reduce(0, +)) / Double(closed.count)
+        values.isEmpty ? 0 : Double(values.reduce(0, +)) / Double(values.count)
     }
 
     private var heat: LinearGradient {

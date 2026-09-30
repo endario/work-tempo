@@ -20,7 +20,7 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.menuAccessibilityLabel, "Work Tempo, fixture, no report yet")
         XCTAssertFalse(snapshot.hasMomentum)
         XCTAssertTrue(snapshot.metrics.allSatisfy { $0.value == "--" })
-        XCTAssertNil(snapshot.toDateBreakdown)
+        XCTAssertNil(snapshot.windowBreakdown)
 
         let refreshing = DashboardSnapshot(
             workspace: workspace,
@@ -82,9 +82,8 @@ final class AppSnapshotModelTests: XCTestCase {
         XCTAssertEqual(snapshot.recentNetGrowth.last, snapshot.netGrowth)
     }
 
-    // Today is partial, so the rate beside it leaves it out; the total is the
-    // figure that counts it, by kind.
-    func testToDateBreakdownCountsTodayOnTopOfTheClosedWindow() throws {
+    // The window ends today, so the total by kind counts today's lines.
+    func testWindowBreakdownEndsWithToday() throws {
         let report = try reportWithOpenDay()
         let snapshot = DashboardSnapshot(
             workspace: try Workspace(root: URL(fileURLWithPath: "/tmp/fixture")),
@@ -96,10 +95,10 @@ final class AppSnapshotModelTests: XCTestCase {
             historyWindow: HistoryWindow(historyDays: 184)
         )
 
-        assertTodayIsCounted(snapshot.toDateBreakdown)
+        assertTodayIsCounted(snapshot.windowBreakdown)
     }
 
-    func testAggregateToDateBreakdownCountsTodayToo() throws {
+    func testAggregateWindowBreakdownEndsWithTodayToo() throws {
         let report = try reportWithOpenDay()
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
         let portfolio = try PortfolioMomentum.build(
@@ -115,10 +114,10 @@ final class AppSnapshotModelTests: XCTestCase {
             maxWindowDays: 30
         )
 
-        assertTodayIsCounted(snapshot.toDateBreakdown)
+        assertTodayIsCounted(snapshot.windowBreakdown)
     }
 
-    /// Thirty closed days of a steady rate, then a busy open day.
+    /// A steady rate, then a busy open day.
     private func reportWithOpenDay() throws -> ReportDocument {
         func days(_ closed: Int, today: Int) -> [Int] { Array(repeating: closed, count: 60) + [today] }
         return try ReportDocument.decode(data: makeReportData(
@@ -134,9 +133,9 @@ final class AppSnapshotModelTests: XCTestCase {
     }
 
     private func assertTodayIsCounted(_ breakdown: WindowBreakdown?, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertEqual(breakdown?.code, ChurnTotals(added: 30 * 10 + 700, deleted: 30 * 2 + 5), file: file, line: line)
-        XCTAssertEqual(breakdown?.tests, ChurnTotals(added: 30 * 1 + 30, deleted: 30 * 1 + 1), file: file, line: line)
-        XCTAssertEqual(breakdown?.docs, ChurnTotals(added: 30 * 5 + 9, deleted: 30 * 3 + 2), file: file, line: line)
+        XCTAssertEqual(breakdown?.code, ChurnTotals(added: 29 * 10 + 700, deleted: 29 * 2 + 5), file: file, line: line)
+        XCTAssertEqual(breakdown?.tests, ChurnTotals(added: 29 * 1 + 30, deleted: 29 * 1 + 1), file: file, line: line)
+        XCTAssertEqual(breakdown?.docs, ChurnTotals(added: 29 * 5 + 9, deleted: 29 * 3 + 2), file: file, line: line)
     }
 
     func testRefreshingAndFailedSnapshotsRetainCachedValues() throws {
@@ -340,10 +339,10 @@ final class AppSnapshotModelTests: XCTestCase {
         docs: Int = 50
     ) throws -> ReportDocument {
         var churn = Array(repeating: 0, count: 61)
-        churn.replaceSubrange(0..<30, with: repeatElement(previousChurn / 30, count: 30))
-        churn.replaceSubrange(30..<60, with: repeatElement(currentChurn / 30, count: 30))
-        if previousChurn % 30 != 0 { churn[0] += previousChurn % 30 }
-        if currentChurn % 30 != 0 { churn[30] += currentChurn % 30 }
+        churn.replaceSubrange(1..<31, with: repeatElement(previousChurn / 30, count: 30))
+        churn.replaceSubrange(31..<61, with: repeatElement(currentChurn / 30, count: 30))
+        if previousChurn % 30 != 0 { churn[1] += previousChurn % 30 }
+        if currentChurn % 30 != 0 { churn[31] += currentChurn % 30 }
         let locValues = Array(repeating: loc, count: 61)
         return try ReportDocument.decode(data: makeReportData(
             loc: locValues,
@@ -404,7 +403,7 @@ final class AppSnapshotModelTests: XCTestCase {
     func testAggregateAccessibilityLabelStatesTheRateOnceWithItsUnit() throws {
         let workspace = try Workspace(root: URL(fileURLWithPath: "/tmp/fixture"))
         let report = try ReportDocument.decode(data: makeReportData(
-            churn: Array(repeating: 10, count: 60) + [99_999]
+            churn: Array(repeating: 10, count: 61)
         ))
         let portfolio = try PortfolioMomentum.build(
             workspaces: [workspace],

@@ -167,7 +167,7 @@ struct DashboardView: View {
         min(content, max(180, screenHeight - 120))
     }
 
-    /// The size of the codebase, split by kind in the hues the charts use.
+    /// The size of the codebase, split by kind.
     /// Source is code plus tests; documentation is counted apart from it.
     private var sourceBanner: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -257,6 +257,8 @@ struct DashboardView: View {
         .padding(18)
     }
 
+    private static let makerURL = URL(string: "http://2mw2lt.com/")!
+
     private var footer: some View {
         HStack {
             Button("Remove", systemImage: "minus.circle") {
@@ -275,6 +277,14 @@ struct DashboardView: View {
                 .contentShape(Rectangle())
                 .keyboardShortcut("q")
                 .help("Quit Work Tempo")
+        }
+        // An overlay rather than a third HStack child, so it stays centred on the
+        // panel whatever the widths of Remove and Quit.
+        .overlay {
+            Link("2mw2lt", destination: Self.makerURL)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .help("2mw2lt.com")
         }
         .buttonStyle(.plain)
         .font(.caption)

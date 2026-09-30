@@ -2,7 +2,6 @@ import Foundation
 
 public struct MomentumInput: Equatable, Sendable {
     public let labels: [String]
-    public let generatedDate: String
     public let loc: [Int]
     public let docLoc: [Int]
     public let codeLoc: [Int]
@@ -19,7 +18,6 @@ public struct MomentumInput: Equatable, Sendable {
 
     public init(
         labels: [String],
-        generatedDate: String,
         loc: [Int],
         docLoc: [Int],
         codeLoc: [Int],
@@ -35,7 +33,6 @@ public struct MomentumInput: Equatable, Sendable {
         docDeleted: [Int]
     ) {
         self.labels = labels
-        self.generatedDate = generatedDate
         self.loc = loc
         self.docLoc = docLoc
         self.codeLoc = codeLoc
@@ -55,7 +52,6 @@ public struct MomentumInput: Equatable, Sendable {
         let days = report.period.labels.count
         self.init(
             labels: report.period.labels,
-            generatedDate: report.generatedDate,
             loc: report.series.loc,
             docLoc: report.series.docLoc,
             codeLoc: report.series.locByKind.code,
@@ -104,10 +100,6 @@ public struct WindowBreakdown: Equatable, Sendable {
     }
 
     public var source: ChurnTotals { code + tests }
-
-    static func + (lhs: WindowBreakdown, rhs: WindowBreakdown) -> WindowBreakdown {
-        WindowBreakdown(code: lhs.code + rhs.code, tests: lhs.tests + rhs.tests, docs: lhs.docs + rhs.docs)
-    }
 }
 
 public struct MomentumSummary: Equatable, Sendable {
@@ -136,24 +128,24 @@ public struct MomentumSummary: Equatable, Sendable {
         testLOC = input.testLoc.last ?? 0
         docsLOC = input.docLoc.last ?? 0
 
-        let closedEnd = input.labels.last == input.generatedDate
-            ? max(0, input.labels.count - 1)
-            : input.labels.count
+        // The window ends on the report's own day, so today counts as one of its
+        // days like any other.
+        let end = input.labels.count
         // Churn as well as lines: a first day that adds source and deletes it
         // again ends at zero LOC but is a day the workspace was worked on.
-        let firstTrackedDay = (0..<closedEnd).first { input.loc[$0] > 0 || input.churn[$0] > 0 } ?? 0
-        let currentStart = max(firstTrackedDay, max(0, closedEnd - maxWindowDays))
-        windowDays = max(1, closedEnd - currentStart)
-        recentChurn = Array(input.churn[currentStart..<closedEnd])
-        recentLabels = Array(input.labels[currentStart..<closedEnd])
-        recentAdded = Array(input.added[currentStart..<closedEnd])
-        recentDeleted = Array(input.deleted[currentStart..<closedEnd])
+        let firstTrackedDay = (0..<end).first { input.loc[$0] > 0 || input.churn[$0] > 0 } ?? 0
+        let currentStart = max(firstTrackedDay, max(0, end - maxWindowDays))
+        windowDays = max(1, end - currentStart)
+        recentChurn = Array(input.churn[currentStart..<end])
+        recentLabels = Array(input.labels[currentStart..<end])
+        recentAdded = Array(input.added[currentStart..<end])
+        recentDeleted = Array(input.deleted[currentStart..<end])
         currentChurn = recentChurn.reduce(0, +)
         dailyChurn = Double(currentChurn) / Double(windowDays)
         var cumulativeGrowth = 0
         recentNetGrowth = zip(
-            input.added[currentStart..<closedEnd],
-            input.deleted[currentStart..<closedEnd]
+            input.added[currentStart..<end],
+            input.deleted[currentStart..<end]
         ).map { added, deleted in
             cumulativeGrowth += added - deleted
             return cumulativeGrowth
@@ -162,8 +154,8 @@ public struct MomentumSummary: Equatable, Sendable {
 
         func total(_ added: [Int], _ deleted: [Int]) -> ChurnTotals {
             ChurnTotals(
-                added: added[currentStart..<closedEnd].reduce(0, +),
-                deleted: deleted[currentStart..<closedEnd].reduce(0, +)
+                added: added[currentStart..<end].reduce(0, +),
+                deleted: deleted[currentStart..<end].reduce(0, +)
             )
         }
         breakdown = WindowBreakdown(
@@ -192,6 +184,18 @@ public enum MetricFormatter {
             return sign + decimal(absolute / 1_000, places: absolute < 10_000 ? 1 : 0) + "K"
         }
         return sign + decimal(absolute / 1_000_000, places: absolute < 10_000_000 ? 2 : 1) + "M"
+    }
+
+    /// One place on every K and M, where `compact` drops it from 10K up.
+    public static func oneDecimal(_ value: Double) -> String {
+        let absolute = abs(value)
+        guard absolute.rounded() >= 1_000 else { return compact(value) }
+        let sign = value < 0 ? "-" : ""
+        let thousands = (absolute / 1_000 * 10).rounded() / 10
+        if thousands < 1_000 {
+            return sign + String(format: "%.1fK", thousands)
+        }
+        return sign + String(format: "%.1fM", (absolute / 1_000_000 * 10).rounded() / 10)
     }
 
     private static func decimal(_ value: Double, places: Int) -> String {
