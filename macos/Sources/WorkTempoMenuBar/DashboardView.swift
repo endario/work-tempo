@@ -44,9 +44,7 @@ struct DashboardView: View {
                     .fixedSize()
             }
             if !model.workspaces.isEmpty {
-                // Menu chrome sits half a point above the title's baseline at
-                // 11 points; measured from the render.
-                workspaceMenu.offset(y: 1.25)
+                workspaceMenu
                 if let message = model.snapshot.noticeMessage {
                     actionButton("info.circle", help: "Report notice") {
                         showingNotice.toggle()
@@ -67,10 +65,7 @@ struct DashboardView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
-                        // Centred boxes put 11-point text 1.5 points above the
-                        // centre of the 24-point buttons and the title's baseline;
-                        // measured from the render at 14-point title text.
-                        .offset(y: 1.5)
+                        .frame(height: 24)
                 }
                 // Each button is a 24-point box around a smaller glyph, so the
                 // boxes touch and the glyphs still read as separate.
@@ -318,8 +313,6 @@ struct DashboardView: View {
         .accessibilityLabel(help)
         .foregroundStyle(.secondary)
         .frame(width: 24, height: 24)
-        // SF Symbols need an optical shift against the 14-point header text.
-        .offset(y: 0.75)
         .help(help)
     }
 
