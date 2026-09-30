@@ -190,6 +190,9 @@ final class MomentumSummaryTests: XCTestCase {
         XCTAssertEqual(MetricFormatter.compact(999), "999")
         XCTAssertEqual(MetricFormatter.compact(1_200), "1.2K")
         XCTAssertEqual(MetricFormatter.compact(1_180_141), "1.18M")
+        XCTAssertEqual(MetricFormatter.compact(999_499), "999K")
+        XCTAssertEqual(MetricFormatter.compact(999_600), "1M")
+        XCTAssertEqual(MetricFormatter.compact(-999_600), "-1M")
     }
 
     // 29K and 28.5K read differently once the total is beside them.

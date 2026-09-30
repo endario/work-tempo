@@ -181,7 +181,10 @@ public enum MetricFormatter {
             return "\(value)"
         }
         if absolute < 1_000_000 {
-            return sign + decimal(absolute / 1_000, places: absolute < 10_000 ? 1 : 0) + "K"
+            let thousands = decimal(absolute / 1_000, places: absolute < 10_000 ? 1 : 0)
+            if thousands != "1000" {
+                return sign + thousands + "K"
+            }
         }
         return sign + decimal(absolute / 1_000_000, places: absolute < 10_000_000 ? 2 : 1) + "M"
     }
