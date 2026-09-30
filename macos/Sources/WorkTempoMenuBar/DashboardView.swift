@@ -16,7 +16,7 @@ struct DashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().padding(.top, 14)
+            Divider().padding(.top, 9)
 
             if model.workspaces.isEmpty {
                 emptyState
@@ -32,8 +32,8 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            HStack(spacing: 7) {
+        HStack(alignment: .headerLine, spacing: 10) {
+            HStack(alignment: .headerLine, spacing: 7) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
@@ -42,6 +42,7 @@ struct DashboardView: View {
                 Text("Work Tempo")
                     .font(.system(size: 14, weight: .semibold))
                     .fixedSize()
+                    .onHeaderLine()
             }
             if !model.workspaces.isEmpty {
                 workspaceMenu
@@ -59,12 +60,13 @@ struct DashboardView: View {
                 }
             }
             Spacer()
-            HStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .headerLine, spacing: 6) {
                 if !model.workspaces.isEmpty {
                     Text(lastUpdatedLabel)
                         .font(.system(size: 11))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
+                        .onHeaderLine()
                         .frame(height: 24)
                 }
                 // Each button is a 24-point box around a smaller glyph, so the
@@ -83,7 +85,7 @@ struct DashboardView: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.top, 16)
+        .padding(.top, 11)
         .padding(.bottom, 2)
         .onChange(of: model.snapshot.noticeMessage) { _, message in
             if message == nil { showingNotice = false }
@@ -123,6 +125,7 @@ struct DashboardView: View {
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: model.scope == .all, vertical: false)
         .frame(maxWidth: model.scope == .all ? nil : 105, alignment: .leading)
+        .onHeaderLine()
         .frame(height: 24)
         .layoutPriority(-1)
         .help(model.scope == .all ? "Choose workspace" : model.selectedWorkspace?.displayName ?? "Choose workspace")
@@ -436,5 +439,21 @@ struct DashboardView: View {
         if model.snapshot.isRefreshing { return "Refreshing" }
         guard let date = model.snapshot.reportGeneratedAt else { return "No report" }
         return "Updated \(date.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+private extension VerticalAlignment {
+    private enum HeaderLine: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+
+    static let headerLine = VerticalAlignment(HeaderLine.self)
+}
+
+private extension View {
+    /// 4.5pt is half the cap height of the row's 11 to 14 point text; re-measure
+    /// if those sizes change.
+    func onHeaderLine() -> some View {
+        alignmentGuide(.headerLine) { $0[.firstTextBaseline] - 4.5 }
     }
 }
