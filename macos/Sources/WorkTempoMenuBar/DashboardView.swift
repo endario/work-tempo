@@ -32,8 +32,8 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 10) {
-            HStack(spacing: 7) {
+        HStack(alignment: .headerLine, spacing: 10) {
+            HStack(alignment: .headerLine, spacing: 7) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
@@ -42,6 +42,7 @@ struct DashboardView: View {
                 Text("Work Tempo")
                     .font(.system(size: 14, weight: .semibold))
                     .fixedSize()
+                    .onHeaderLine()
             }
             if !model.workspaces.isEmpty {
                 workspaceMenu
@@ -59,12 +60,13 @@ struct DashboardView: View {
                 }
             }
             Spacer()
-            HStack(alignment: .center, spacing: 6) {
+            HStack(alignment: .headerLine, spacing: 6) {
                 if !model.workspaces.isEmpty {
                     Text(lastUpdatedLabel)
                         .font(.system(size: 11))
                         .foregroundStyle(model.snapshot.dataState == .stale ? Color.orange : Color.secondary)
                         .fixedSize()
+                        .onHeaderLine()
                         .frame(height: 24)
                 }
                 // Each button is a 24-point box around a smaller glyph, so the
@@ -123,6 +125,7 @@ struct DashboardView: View {
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: model.scope == .all, vertical: false)
         .frame(maxWidth: model.scope == .all ? nil : 105, alignment: .leading)
+        .onHeaderLine()
         .frame(height: 24)
         .layoutPriority(-1)
         .help(model.scope == .all ? "Choose workspace" : model.selectedWorkspace?.displayName ?? "Choose workspace")
@@ -436,5 +439,26 @@ struct DashboardView: View {
         if model.snapshot.isRefreshing { return "Refreshing" }
         guard let date = model.snapshot.reportGeneratedAt else { return "No report" }
         return "Updated \(date.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+private extension VerticalAlignment {
+    private enum HeaderLine: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[VerticalAlignment.center] }
+    }
+
+    /// The row's shared line. Icon boxes sit centred on it; text sits on it by
+    /// baseline (see `onHeaderLine`), because centred boxes of different font
+    /// sizes put their baselines at different heights.
+    static let headerLine = VerticalAlignment(HeaderLine.self)
+}
+
+private extension View {
+    /// Puts the text's baseline a fixed distance below the header line, about
+    /// half the cap height of the 11 to 14 point sizes used in the row, so
+    /// every text run shares one baseline and its caps straddle the icons'
+    /// centre. Measured against those sizes; re-measure if they change.
+    func onHeaderLine() -> some View {
+        alignmentGuide(.headerLine) { $0[.firstTextBaseline] - 4.5 }
     }
 }
