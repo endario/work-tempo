@@ -1033,6 +1033,50 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertEqual(snap.total, 4)
             self.assertEqual(snap.by_language.get("Python"), 4)
 
+    def test_cutoff_batch_parses_utc_z_suffix_dates(self) -> None:
+        tempo = load_script("tempo_cutoff_z_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            stamp = "2026-01-01T00:00:00Z"
+            (repo / "utc.py").write_text("UTC = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "utc.py"], cwd=repo, check=True)
+            env = os.environ | {"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+            subprocess.run(["git", "commit", "-m", "utc"], cwd=repo,
+                           env=env, check=True, capture_output=True)
+            track_remote_main(repo)
+            oid = tempo.source_oid(repo)
+            utc_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+            ).strip()
+            # Both sides use the Z-suffixed production cutoff format.
+            answers = tempo.find_commits_at(
+                repo, ["2026-06-01T00:00:00Z", "2020-01-01T00:00:00Z"], oid,
+            )
+            self.assertEqual(answers["2026-06-01T00:00:00Z"], utc_commit)
+            self.assertIsNone(answers["2020-01-01T00:00:00Z"])
+
+    def test_snapshot_counts_export_ignored_files_and_keys_the_method(self) -> None:
+        tempo = load_script("tempo_export_ignore_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            (repo / "ignored.py").write_text("IGNORED = 1\n", encoding="utf-8")
+            (repo / ".gitattributes").write_text("ignored.py export-ignore\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "attrs"], cwd=repo, check=True, capture_output=True)
+            track_remote_main(repo)
+            config = tempo.default_config()
+            snap = tempo.count_snapshot(repo, tempo.source_oid(repo), config)
+            # git archive omits export-ignored files; tracked source counts.
+            self.assertEqual(snap.total, 2)
+
+            identity = tempo.repository_identity(repo)
+            key = tempo.snapshot_cache_key(identity, "abc123", config, False)
+            self.assertIn(f"|{tempo.SNAPSHOT_COUNT_METHOD}", key)
+            with mock.patch.object(tempo, "SNAPSHOT_COUNT_METHOD", "future-2"):
+                self.assertNotEqual(tempo.snapshot_cache_key(identity, "abc123", config, False), key)
+
     def test_warm_refresh_resolves_repository_identity_once_per_repo(self) -> None:
         tempo = load_script("tempo_warm_identity_test", "src/work_tempo/cli.py")
         with tempfile.TemporaryDirectory() as tmp:

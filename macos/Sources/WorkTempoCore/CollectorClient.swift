@@ -139,15 +139,17 @@ public actor CollectorClient {
                 runLog.finish(result: "failed(\(status))", started: started)
                 throw CollectorError.collectorFailed(finalDiagnostic(at: diagnosticURL, status: status))
             }
-            runLog.finish(result: "ok", started: started)
         } catch {
             runLog.finish(result: "spawn_failed", started: started)
             throw error
         }
 
         do {
-            return try ReportDocument.decode(data: Data(contentsOf: request.reportURL))
+            let report = try ReportDocument.decode(data: Data(contentsOf: request.reportURL))
+            runLog.finish(result: "ok", started: started)
+            return report
         } catch {
+            runLog.finish(result: "invalid_report", started: started)
             throw CollectorError.invalidReport(error.localizedDescription)
         }
     }
@@ -237,10 +239,16 @@ private final class RunLog {
                size > capBytes {
                 rotate(keepingLast: capBytes / 2)
             }
-            let fileHandle = try FileHandle(forWritingTo: url)
-            fileHandle.seekToEndOfFile()
+            // O_APPEND: a manual CLI run priming the cache while the app
+            // refreshes interleaves instead of clobbering shared offsets.
+            let descriptor = Darwin.open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+            guard descriptor >= 0 else {
+                close()
+                return
+            }
+            let fileHandle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
             handle = fileHandle
-            stdoutDescriptor = fileHandle.fileDescriptor
+            stdoutDescriptor = descriptor
             try fileHandle.write(contentsOf: Data(header.utf8))
         } catch {
             close()

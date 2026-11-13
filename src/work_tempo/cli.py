@@ -6,8 +6,9 @@ configured extra repos (each repo uses its own history — no attempt is made to
 reconcile submodule pointers against the parent):
 
   - LOC    : snapshot of tracked source lines at each period cutoff, computed by
-             extracting `git archive` of the commit at that cutoff and counting
-             newlines in files whose extension/name matches the language map.
+             streaming `git ls-tree` + `git cat-file --batch` of the commit at
+             that cutoff and counting newlines in regular files whose
+             extension/name matches the language map.
   - Churn  : per-period total of (added + deleted) lines across non-merge commits
              authored in that period, taken from `git log --numstat --no-merges`
              and filtered through the same path/language rules as LOC.
@@ -832,8 +833,14 @@ def save_cache(path: Path | None, cache: dict | None) -> None:
     atomic_write_text(path, json.dumps(cache, sort_keys=True))
 
 
+# Bump whenever the snapshot counting method changes semantics (today:
+# object-database streaming, which counts export-ignored files that
+# `git archive` omitted). Old-method cache entries must miss, not mix.
+SNAPSHOT_COUNT_METHOD = "odb-1"
+
+
 def snapshot_cache_key(repo_identity: str, commit: str, config: Config, include_vendor: bool) -> str:
-    return f"{config.signature(include_vendor)}|{repo_identity}|{commit}"
+    return f"{config.signature(include_vendor)}|{repo_identity}|{commit}|{SNAPSHOT_COUNT_METHOD}"
 
 
 def churn_cache_key(repo_identity: str, config: Config, include_vendor: bool, report_tz: tzinfo, period: str) -> str:
@@ -990,14 +997,17 @@ def find_commits_at(
     if not cutoff_isos:
         return {}
     pending: dict[str, datetime] = {
-        iso: datetime.fromisoformat(iso) for iso in cutoff_isos
+        iso: datetime.fromisoformat(iso.replace("Z", "+00:00")) for iso in cutoff_isos
     }
     answers: dict[str, str | None] = {}
+    # stderr to a file, not a pipe: a chatty git must not fill the pipe and
+    # deadlock against the stdout walk.
+    stderr_file = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
     process = subprocess.Popen(
         ["git", "log", "--format=%H%x09%cI", source_oid],
         cwd=repo,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=stderr_file,
         text=True,
     )
     assert process.stdout is not None
@@ -1005,7 +1015,7 @@ def find_commits_at(
     try:
         for line in process.stdout:
             commit, date_text = line.rstrip("\n").split("\t", 1)
-            commit_date = datetime.fromisoformat(date_text)
+            commit_date = datetime.fromisoformat(date_text.replace("Z", "+00:00"))
             for iso, cutoff_date in list(pending.items()):
                 if commit_date <= cutoff_date:  # git --before is inclusive of the instant
                     answers[iso] = commit
@@ -1015,12 +1025,12 @@ def find_commits_at(
                 break
     finally:
         process.stdout.close()
-        assert process.stderr is not None
-        stderr_text = process.stderr.read()
-        process.stderr.close()
         if stopped_early:
             process.terminate()
         process.wait()
+        stderr_file.seek(0)
+        stderr_text = stderr_file.read()
+        stderr_file.close()
     if not stopped_early and process.returncode != 0:
         raise RuntimeError(
             f"git log cutoff lookup failed for {repo}: "
@@ -1141,9 +1151,20 @@ def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool
                 if len(fields) < 3 or fields[1] != b"blob":
                     continue  # missing or unexpected object: not countable
                 size = int(fields[2])
-                body = cat.stdout.read(size)
+                lines = 0
+                remaining = size
+                last_byte = b""
+                while remaining > 0:
+                    block = cat.stdout.read(min(remaining, 1 << 20))
+                    if not block:
+                        raise RuntimeError(f"git cat-file stream ended early for {repo}")
+                    lines += block.count(b"\n")
+                    if block:
+                        last_byte = block[-1:]
+                    remaining -= len(block)
                 cat.stdout.read(1)  # trailing newline after each blob
-                lines = body.count(b"\n") + (1 if body and not body.endswith(b"\n") else 0)
+                if size and last_byte != b"\n":
+                    lines += 1
                 for rel, lang, doc_lang in wanted[oid]:
                     if doc_lang is not None:
                         snap.docs_total += lines
