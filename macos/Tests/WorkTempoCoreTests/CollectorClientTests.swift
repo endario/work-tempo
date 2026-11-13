@@ -26,7 +26,6 @@ final class CollectorClientTests: XCTestCase {
                 "REPORT_FIXTURE": reportFixture.path,
             ],
             logDirectory: fixture.base.appending(path: "logs")
-            ]
         )
         let workspace = try Workspace(root: fixture.root)
 
@@ -89,7 +88,10 @@ final class CollectorClientTests: XCTestCase {
             exit 7
             """
         )
-        let client = CollectorClient(executable: executable)
+        let client = CollectorClient(
+            executable: executable,
+            logDirectory: fixture.base.appending(path: "logs")
+        )
         let workspace = try Workspace(root: fixture.root)
 
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
@@ -220,7 +222,8 @@ final class CollectorClientTests: XCTestCase {
             environment: [
                 "PARENT_FD": String(markerHandle.fileDescriptor),
                 "REPORT_FIXTURE": reportFixture.path,
-            ]
+            ],
+            logDirectory: fixture.base.appending(path: "logs")
         )
 
         _ = try await client.collect(CollectorRequest(
@@ -245,7 +248,8 @@ final class CollectorClientTests: XCTestCase {
         )
         let client = CollectorClient(
             executable: executable,
-            environment: ["CHILD_PID_FILE": childPIDFile.path]
+            environment: ["CHILD_PID_FILE": childPIDFile.path],
+            logDirectory: fixture.base.appending(path: "logs")
         )
         let workspace = try Workspace(root: fixture.root)
 
@@ -287,7 +291,8 @@ final class CollectorClientTests: XCTestCase {
         )
         let client = CollectorClient(
             executable: executable,
-            environment: ["CHILD_PID_FILE": childPIDFile.path]
+            environment: ["CHILD_PID_FILE": childPIDFile.path],
+            logDirectory: fixture.base.appending(path: "logs")
         )
         let workspace = try Workspace(root: fixture.root)
         let task = Task {
