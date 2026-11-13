@@ -895,9 +895,27 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertIn(source["sourceOid"][:12], stdout.getvalue())
             self.assertIn("fetch failed", stderr.getvalue())
 
+    def test_run_prints_churn_and_snapshot_timings(self) -> None:
+        tempo = load_script("tempo_phase_timing_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            make_tracked_repo(repo)
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
+                    "--no-languages"]
+            stdout = io.StringIO()
+            with (mock.patch.object(sys, "argv", argv),
+                  mock.patch.object(sys, "stderr", io.StringIO()),
+                  redirect_stdout(stdout)):
+                self.assertEqual(tempo.main(), 0)
+            self.assertRegex(stdout.getvalue(), r"churn \(parent\): disabled in \d+\.\d+s")
+            self.assertRegex(stdout.getvalue(), r"snapshots: 1 computed in \d+\.\d+s")
+
     def test_collection_git_errors_do_not_replace_reports(self) -> None:
         tempo = load_script("tempo_atomic_collection_test", "src/work_tempo/cli.py")
-        for failing_operation in ("collect_churn_cached", "find_commit_at", "count_snapshot"):
+        for failing_operation in ("collect_churn_cached", "find_commits_at", "count_snapshot"):
             with self.subTest(operation=failing_operation), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo = root / "repo"
@@ -931,11 +949,15 @@ class LocAnalysisScriptTest(unittest.TestCase):
             first_oid = tempo.source_oid(repo)
             cutoff = "2030-01-01T00:00:00+00:00"
             old_cutoff = "2000-01-01T00:00:00+00:00"
-            self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache), (first_oid, False))
-            self.assertEqual(tempo.cached_commit_at(repo, old_cutoff, first_oid, identity, cache), (None, False))
-            with mock.patch.object(tempo, "find_commit_at", side_effect=AssertionError("Git queried warm cutoff")):
-                self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache), (first_oid, True))
-                self.assertEqual(tempo.cached_commit_at(repo, old_cutoff, first_oid, identity, cache), (None, True))
+            self.assertEqual(
+                tempo.cached_commits_at(repo, [cutoff, old_cutoff], first_oid, identity, cache),
+                ({cutoff: first_oid, old_cutoff: None}, 0, 2),
+            )
+            with mock.patch.object(tempo, "find_commits_at", side_effect=AssertionError("Git queried warm cutoff")):
+                self.assertEqual(
+                    tempo.cached_commits_at(repo, [cutoff, old_cutoff], first_oid, identity, cache),
+                    ({cutoff: first_oid, old_cutoff: None}, 2, 0),
+                )
 
             (repo / "new.py").write_text("NEW = 1\n", encoding="utf-8")
             subprocess.run(["git", "add", "new.py"], cwd=repo, check=True)
@@ -947,8 +969,113 @@ class LocAnalysisScriptTest(unittest.TestCase):
                            env=old_date, check=True, capture_output=True)
             track_remote_main(repo)
             new_oid = tempo.source_oid(repo)
-            self.assertEqual(tempo.cached_commit_at(repo, cutoff, new_oid, identity, cache), (new_oid, False))
-            self.assertEqual(tempo.cached_commit_at(repo, cutoff, new_oid, identity, None), (new_oid, False))
+            self.assertEqual(
+                tempo.cached_commits_at(repo, [cutoff], new_oid, identity, cache),
+                ({cutoff: new_oid}, 0, 1),
+            )
+            self.assertEqual(
+                tempo.cached_commits_at(repo, [cutoff], new_oid, identity, None),
+                ({cutoff: new_oid}, 0, 1),
+            )
+
+    def test_cutoff_batch_matches_git_before_lookup_at_boundaries(self) -> None:
+        tempo = load_script("tempo_cutoff_batch_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            dates = [
+                "2026-01-01T00:00:00+00:00",
+                "2026-02-01T12:00:00+00:00",
+                "2026-03-01T00:00:00+00:00",
+            ]
+            for index, stamp in enumerate(dates):
+                (repo / f"f{index}.py").write_text(f"V{index} = 1\n", encoding="utf-8")
+                subprocess.run(["git", "add", "."], cwd=repo, check=True)
+                env = os.environ | {
+                    "GIT_AUTHOR_DATE": stamp,
+                    "GIT_COMMITTER_DATE": stamp,
+                }
+                subprocess.run(["git", "commit", "-m", f"c{index}"], cwd=repo,
+                               env=env, check=True, capture_output=True)
+            track_remote_main(repo)
+            oid = tempo.source_oid(repo)
+            cutoffs = dates + [
+                "2026-01-15T00:00:00+00:00",
+                "2026-02-01T12:00:01+00:00",
+                "2025-01-01T00:00:00+00:00",
+                "2030-01-01T00:00:00+00:00",
+            ]
+            answers = tempo.find_commits_at(repo, cutoffs, oid)
+            self.assertEqual(set(answers), set(cutoffs))
+            for cutoff in cutoffs:
+                expected = subprocess.run(
+                    ["git", "log", "-1", "--format=%H", f"--before={cutoff}", oid],
+                    cwd=repo, check=True, capture_output=True, text=True,
+                ).stdout.strip() or None
+                self.assertEqual(answers[cutoff], expected, f"cutoff {cutoff}")
+
+    def test_snapshot_counts_from_object_database(self) -> None:
+        tempo = load_script("tempo_snapshot_odb_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)  # main.py: "VALUE = 1\n"
+            (repo / "plain.py").write_text("a\nb", encoding="utf-8")  # no trailing newline: 2 lines
+            (repo / "empty.py").write_text("", encoding="utf-8")
+            (repo / "run.py").write_text("X = 1\n", encoding="utf-8")
+            (repo / "run.py").chmod(0o755)
+            os.symlink("main.py", repo / "link.py")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "shapes"], cwd=repo, check=True, capture_output=True)
+            track_remote_main(repo)
+            config = tempo.default_config()
+            snap = tempo.count_snapshot(repo, tempo.source_oid(repo), config)
+            # main.py 1 + plain.py 2 + empty.py 0 + run.py 1; the symlink is skipped
+            self.assertEqual(snap.total, 4)
+            self.assertEqual(snap.by_language.get("Python"), 4)
+
+    def test_cutoff_batch_parses_utc_z_suffix_dates(self) -> None:
+        tempo = load_script("tempo_cutoff_z_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            stamp = "2026-01-01T00:00:00Z"
+            (repo / "utc.py").write_text("UTC = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "utc.py"], cwd=repo, check=True)
+            env = os.environ | {"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+            subprocess.run(["git", "commit", "-m", "utc"], cwd=repo,
+                           env=env, check=True, capture_output=True)
+            track_remote_main(repo)
+            oid = tempo.source_oid(repo)
+            utc_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True,
+            ).strip()
+            # Both sides use the Z-suffixed production cutoff format.
+            answers = tempo.find_commits_at(
+                repo, ["2026-06-01T00:00:00Z", "2020-01-01T00:00:00Z"], oid,
+            )
+            self.assertEqual(answers["2026-06-01T00:00:00Z"], utc_commit)
+            self.assertIsNone(answers["2020-01-01T00:00:00Z"])
+
+    def test_snapshot_counts_export_ignored_files_and_keys_the_method(self) -> None:
+        tempo = load_script("tempo_export_ignore_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            make_tracked_repo(repo)
+            (repo / "ignored.py").write_text("IGNORED = 1\n", encoding="utf-8")
+            (repo / ".gitattributes").write_text("ignored.py export-ignore\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "attrs"], cwd=repo, check=True, capture_output=True)
+            track_remote_main(repo)
+            config = tempo.default_config()
+            snap = tempo.count_snapshot(repo, tempo.source_oid(repo), config)
+            # git archive omits export-ignored files; tracked source counts.
+            self.assertEqual(snap.total, 2)
+
+            identity = tempo.repository_identity(repo)
+            key = tempo.snapshot_cache_key(identity, "abc123", config, False)
+            self.assertIn(f"|{tempo.SNAPSHOT_COUNT_METHOD}", key)
+            with mock.patch.object(tempo, "SNAPSHOT_COUNT_METHOD", "future-2"):
+                self.assertNotEqual(tempo.snapshot_cache_key(identity, "abc123", config, False), key)
 
     def test_warm_refresh_resolves_repository_identity_once_per_repo(self) -> None:
         tempo = load_script("tempo_warm_identity_test", "src/work_tempo/cli.py")
@@ -1001,18 +1128,18 @@ class LocAnalysisScriptTest(unittest.TestCase):
             cutoff = "2030-01-01T00:00:00+00:00"
             cache = tempo.empty_cache()
             identity = tempo.repository_identity(repo)
-            original_lookup = tempo.find_commit_at
+            original_lookup = tempo.find_commits_at
 
-            def move_ref_during_lookup(path, instant, source):
+            def move_ref_during_lookup(path, instants, source):
                 track_remote_main(repo)
-                return original_lookup(path, instant, source)
+                return original_lookup(path, instants, source)
 
-            with mock.patch.object(tempo, "find_commit_at", side_effect=move_ref_during_lookup):
-                self.assertEqual(tempo.cached_commit_at(repo, cutoff, first_oid, identity, cache),
-                                 (first_oid, False))
+            with mock.patch.object(tempo, "find_commits_at", side_effect=move_ref_during_lookup):
+                self.assertEqual(tempo.cached_commits_at(repo, [cutoff], first_oid, identity, cache),
+                                 ({cutoff: first_oid}, 0, 1))
             self.assertEqual(tempo.source_oid(repo), second_oid)
-            self.assertEqual(tempo.cached_commit_at(repo, cutoff, second_oid, identity, cache),
-                             (second_oid, False))
+            self.assertEqual(tempo.cached_commits_at(repo, [cutoff], second_oid, identity, cache),
+                             ({cutoff: second_oid}, 0, 1))
 
     def test_cli_fetches_remote_main_then_falls_back_when_origin_is_unavailable(self) -> None:
         tempo = load_script("tempo_fetch_report_test", "src/work_tempo/cli.py")
@@ -1087,7 +1214,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertIn("fetch main from origin", stderr.getvalue())
             self.assertNotIn("exclude this repository", stderr.getvalue())
 
-    def test_parallel_archive_failure_does_not_publish_partial_report(self) -> None:
+    def test_parallel_snapshot_failure_does_not_publish_partial_report(self) -> None:
         tempo = importlib.import_module("work_tempo.cli")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1097,7 +1224,7 @@ class LocAnalysisScriptTest(unittest.TestCase):
             bin_dir.mkdir()
             fake_git = bin_dir / "git"
             fake_git.write_text(
-                '#!/bin/sh\nif [ "$1" = archive ]; then printf "token=SECRET\\n" >&2; exit 1; fi\nexec /usr/bin/git "$@"\n',
+                '#!/bin/sh\nif [ "$1" = ls-tree ]; then printf "token=SECRET\\n" >&2; exit 1; fi\nexec /usr/bin/git "$@"\n',
                 encoding="utf-8",
             )
             fake_git.chmod(0o755)

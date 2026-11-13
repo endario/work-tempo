@@ -24,7 +24,8 @@ final class CollectorClientTests: XCTestCase {
             environment: [
                 "ARGUMENT_LOG": argumentLog.path,
                 "REPORT_FIXTURE": reportFixture.path,
-            ]
+            ],
+            logDirectory: fixture.base.appending(path: "logs")
         )
         let workspace = try Workspace(root: fixture.root)
 
@@ -87,7 +88,10 @@ final class CollectorClientTests: XCTestCase {
             exit 7
             """
         )
-        let client = CollectorClient(executable: executable)
+        let client = CollectorClient(
+            executable: executable,
+            logDirectory: fixture.base.appending(path: "logs")
+        )
         let workspace = try Workspace(root: fixture.root)
 
         await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
@@ -98,6 +102,135 @@ final class CollectorClientTests: XCTestCase {
         ))) { error in
             XCTAssertEqual(error as? CollectorError, .collectorFailed("final diagnostic"))
         }
+    }
+
+    func testRunLogRecordsCollectorOutputAndResult() async throws {
+        let fixture = try makeFixtureRepository()
+        let reportFixture = fixture.base.appending(path: "fixture.json")
+        try makeReportData().write(to: reportFixture)
+        let logDirectory = fixture.base.appending(path: "logs")
+        let executable = try makeExecutable(
+            in: fixture.base,
+            body: """
+            echo 'phase marker line'
+            last=""
+            for argument in "$@"; do last="$argument"; done
+            cp "$REPORT_FIXTURE" "$last"
+            """
+        )
+        let client = CollectorClient(
+            executable: executable,
+            environment: ["REPORT_FIXTURE": reportFixture.path],
+            logDirectory: logDirectory
+        )
+        let workspace = try Workspace(root: fixture.root)
+
+        _ = try await client.collect(CollectorRequest(
+            workspace: workspace,
+            reportURL: fixture.base.appending(path: "report.json"),
+            timeout: .seconds(5),
+            collectorDays: 185
+        ))
+
+        let log = try String(contentsOf: client.runLogURL(for: workspace), encoding: .utf8)
+        XCTAssertTrue(log.contains("root=\(workspace.root.path)"), log)
+        XCTAssertTrue(log.contains("days=185"), log)
+        XCTAssertTrue(log.contains("phase marker line"), log)
+        XCTAssertTrue(log.contains("result=ok seconds="), log)
+    }
+
+    func testRunLogRecordsTimeoutResult() async throws {
+        let fixture = try makeFixtureRepository()
+        let logDirectory = fixture.base.appending(path: "logs")
+        let executable = try makeExecutable(in: fixture.base, body: "sleep 30")
+        let client = CollectorClient(executable: executable, logDirectory: logDirectory)
+        let workspace = try Workspace(root: fixture.root)
+
+        await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
+            workspace: workspace,
+            reportURL: fixture.base.appending(path: "report.json"),
+            timeout: .seconds(1),
+            collectorDays: 185
+        ))) { error in
+            XCTAssertEqual(error as? CollectorError, .timedOut)
+        }
+
+        let log = try String(contentsOf: client.runLogURL(for: workspace), encoding: .utf8)
+        XCTAssertTrue(log.contains("result=timed_out seconds="), log)
+    }
+
+    func testRunLogRotatesOversizedHistory() async throws {
+        let fixture = try makeFixtureRepository()
+        let reportFixture = fixture.base.appending(path: "fixture.json")
+        try makeReportData().write(to: reportFixture)
+        let logDirectory = fixture.base.appending(path: "logs")
+        let executable = try makeExecutable(
+            in: fixture.base,
+            body: """
+            last=""
+            for argument in "$@"; do last="$argument"; done
+            cp "$REPORT_FIXTURE" "$last"
+            """
+        )
+        let cap = 4_096
+        let client = CollectorClient(
+            executable: executable,
+            environment: ["REPORT_FIXTURE": reportFixture.path],
+            logDirectory: logDirectory,
+            logCapBytes: cap
+        )
+        let workspace = try Workspace(root: fixture.root)
+        let logURL = client.runLogURL(for: workspace)
+        try FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+        try Data(repeating: UInt8(ascii: "x"), count: 100 * cap).write(to: logURL)
+
+        _ = try await client.collect(CollectorRequest(
+            workspace: workspace,
+            reportURL: fixture.base.appending(path: "report.json"),
+            timeout: .seconds(5),
+            collectorDays: 185
+        ))
+
+        let log = try String(contentsOf: logURL, encoding: .utf8)
+        let size = try FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? Int ?? 0
+        XCTAssertLessThanOrEqual(size, cap + 2_048, "run log was not rotated down to the cap")
+        XCTAssertTrue(log.contains("result=ok seconds="), log)
+    }
+
+    func testRunLogRecordsInvalidReportResult() async throws {
+        let fixture = try makeFixtureRepository()
+        let logDirectory = fixture.base.appending(path: "logs")
+        let badReport = fixture.base.appending(path: "bad.json")
+        try Data("not json".utf8).write(to: badReport)
+        let executable = try makeExecutable(
+            in: fixture.base,
+            body: """
+            last=""
+            for argument in "$@"; do last="$argument"; done
+            cp "$REPORT_FIXTURE" "$last"
+            """
+        )
+        let client = CollectorClient(
+            executable: executable,
+            environment: ["REPORT_FIXTURE": badReport.path],
+            logDirectory: logDirectory
+        )
+        let workspace = try Workspace(root: fixture.root)
+
+        await XCTAssertThrowsErrorAsync(try await client.collect(CollectorRequest(
+            workspace: workspace,
+            reportURL: fixture.base.appending(path: "report.json"),
+            timeout: .seconds(5),
+            collectorDays: 185
+        ))) { error in
+            guard case CollectorError.invalidReport = error else {
+                return XCTFail("Expected invalidReport, got \(error)")
+            }
+        }
+
+        let log = try String(contentsOf: client.runLogURL(for: workspace), encoding: .utf8)
+        XCTAssertTrue(log.contains("result=invalid_report seconds="), log)
+        XCTAssertFalse(log.contains("result=ok"), log)
     }
 
     func testCollectorDoesNotInheritUnrelatedOpenDescriptors() async throws {
@@ -125,7 +258,8 @@ final class CollectorClientTests: XCTestCase {
             environment: [
                 "PARENT_FD": String(markerHandle.fileDescriptor),
                 "REPORT_FIXTURE": reportFixture.path,
-            ]
+            ],
+            logDirectory: fixture.base.appending(path: "logs")
         )
 
         _ = try await client.collect(CollectorRequest(
@@ -150,7 +284,8 @@ final class CollectorClientTests: XCTestCase {
         )
         let client = CollectorClient(
             executable: executable,
-            environment: ["CHILD_PID_FILE": childPIDFile.path]
+            environment: ["CHILD_PID_FILE": childPIDFile.path],
+            logDirectory: fixture.base.appending(path: "logs")
         )
         let workspace = try Workspace(root: fixture.root)
 
@@ -192,7 +327,8 @@ final class CollectorClientTests: XCTestCase {
         )
         let client = CollectorClient(
             executable: executable,
-            environment: ["CHILD_PID_FILE": childPIDFile.path]
+            environment: ["CHILD_PID_FILE": childPIDFile.path],
+            logDirectory: fixture.base.appending(path: "logs")
         )
         let workspace = try Workspace(root: fixture.root)
         let task = Task {

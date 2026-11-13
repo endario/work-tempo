@@ -35,7 +35,8 @@ final class CollectorContractTests: XCTestCase {
             environment: [
                 "HOME": fixture.path,
                 "PYTHONPATH": repositoryRoot.appending(path: "src").path,
-            ]
+            ],
+            logDirectory: fixture.appending(path: "run-logs")
         ).collect(CollectorRequest(workspace: workspace, reportURL: output, timeout: .seconds(30), collectorDays: 185))
 
         XCTAssertEqual(report.schemaVersion, 1)

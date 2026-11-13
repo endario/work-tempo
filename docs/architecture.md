@@ -64,7 +64,7 @@ A key that changes counting is only accepted under a version that older releases
 
 ## Counting model
 
-- LOC snapshots count newline-delimited tracked files at the last commit reachable from the captured `origin/main` tip before each period cutoff, read with `git archive`.
+- LOC snapshots count newline-delimited tracked files at the last commit reachable from the captured `origin/main` tip before each period cutoff, streamed from the object database via `git ls-tree` and `git cat-file --batch` (regular files only; export-ignored files count).
 - Source is split into code and tests using conventional test directories and test/spec/e2e filename patterns.
 - Churn is added plus deleted lines from non-merge commits, grouped by author date and filtered through the same counting policy.
 - Blank lines and comments count: the unit is physical lines, not semantic SLOC.
