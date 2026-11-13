@@ -976,30 +976,74 @@ def partition_skipped_repos(root: Path, config: Config, skipped_repos: list[str]
     }
 
 
-def find_commit_at(repo: Path, cutoff_iso: str, source_oid: str) -> str | None:
-    result = subprocess.run(
-        ["git", "log", "-1", "--format=%H", f"--before={cutoff_iso}", source_oid],
+def find_commits_at(
+    repo: Path,
+    cutoff_isos: list[str],
+    source_oid: str,
+) -> dict[str, str | None]:
+    """Resolve each cutoff to the newest commit before it, in one history walk.
+
+    Equivalent per cutoff to `git log -1 --format=%H --before=<cutoff>
+    <source_oid>`: same walk order, same committer-date comparison. The walk
+    is stopped as soon as every cutoff is answered.
+    """
+    if not cutoff_isos:
+        return {}
+    pending: dict[str, datetime] = {
+        iso: datetime.fromisoformat(iso) for iso in cutoff_isos
+    }
+    answers: dict[str, str | None] = {}
+    process = subprocess.Popen(
+        ["git", "log", "--format=%H%x09%cI", source_oid],
         cwd=repo,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
-    if result.returncode != 0:
+    assert process.stdout is not None
+    stopped_early = False
+    try:
+        for line in process.stdout:
+            commit, date_text = line.rstrip("\n").split("\t", 1)
+            commit_date = datetime.fromisoformat(date_text)
+            for iso, cutoff_date in list(pending.items()):
+                if commit_date <= cutoff_date:  # git --before is inclusive of the instant
+                    answers[iso] = commit
+                    del pending[iso]
+            if not pending:
+                stopped_early = True
+                break
+    finally:
+        process.stdout.close()
+        assert process.stderr is not None
+        stderr_text = process.stderr.read()
+        process.stderr.close()
+        if stopped_early:
+            process.terminate()
+        process.wait()
+    if not stopped_early and process.returncode != 0:
         raise RuntimeError(
             f"git log cutoff lookup failed for {repo}: "
-            f"{result.stderr.strip() or 'unknown error'}"
+            f"{stderr_text.strip() or 'unknown error'}"
         )
-    return result.stdout.strip() or None
+    for iso in pending:
+        answers[iso] = None
+    return answers
 
 
-def cached_commit_at(
+def cached_commits_at(
     repo: Path,
-    cutoff_iso: str,
+    cutoff_isos: list[str],
     source_oid: str,
     repo_identity: str,
     cache: dict | None,
-) -> tuple[str | None, bool]:
+) -> tuple[dict[str, str | None], int, int]:
+    """Return ({cutoff: commit or None}, cached hits, git-resolved misses).
+
+    All misses are resolved by a single history walk per repository.
+    """
     if cache is None:
-        return find_commit_at(repo, cutoff_iso, source_oid), False
+        return find_commits_at(repo, cutoff_isos, source_oid), 0, len(cutoff_isos)
     repos_cache = cache.setdefault("commit_at", {})
     if not isinstance(repos_cache, dict):
         repos_cache = cache["commit_at"] = {}
@@ -1010,65 +1054,110 @@ def cached_commit_at(
     cutoffs = entry.get("cutoffs")
     if not isinstance(cutoffs, dict):
         cutoffs = entry["cutoffs"] = {}
-    if cutoff_iso in cutoffs and (cutoffs[cutoff_iso] is None or isinstance(cutoffs[cutoff_iso], str)):
-        return cutoffs[cutoff_iso], True
-    commit = find_commit_at(repo, cutoff_iso, source_oid)
-    cutoffs[cutoff_iso] = commit
-    return commit, False
+
+    def usable(value: object) -> bool:
+        return value is None or isinstance(value, str)
+
+    answers = {
+        iso: cutoffs[iso] for iso in cutoff_isos
+        if iso in cutoffs and usable(cutoffs[iso])
+    }
+    missing = [iso for iso in cutoff_isos if iso not in answers]
+    if missing:
+        answers.update(find_commits_at(repo, missing, source_oid))
+        for iso in missing:
+            cutoffs[iso] = answers[iso]
+    return answers, len(answers) - len(missing), len(missing)
 
 
 def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool = False) -> Snapshot:
-    """Extract `commit` from `repo` into a temporary directory and count lines."""
+    """Count lines for `commit` straight from the Git object database.
+
+    Streams `git ls-tree -r` and `git cat-file --batch`, so no worktree is
+    materialized and only blobs whose paths pass the counting filters are
+    read. Regular files only: symlinks and submodules are skipped.
+    """
     snap = Snapshot()
-    archive = subprocess.run(
-        ["git", "archive", "--format=tar", commit],
+    tree = subprocess.run(
+        ["git", "ls-tree", "-r", "-z", commit],
         cwd=repo, capture_output=True,
     )
-    if archive.returncode != 0 or not archive.stdout:
-        error = archive.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git archive failed for {repo}: {error or 'empty archive'}")
+    if tree.returncode != 0:
+        error = tree.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git ls-tree failed for {repo}: {error or 'unknown error'}")
 
-    with tempfile.TemporaryDirectory(prefix="loc-snap-") as tmp:
-        extract = subprocess.run(
-            ["tar", "-x", "-C", tmp],
-            input=archive.stdout, capture_output=True,
+    doc_only = config.is_doc_only_repo(repo)
+    # blob oid -> [(path, source language, doc language)]
+    wanted: dict[str, list[tuple[str, str | None, str | None]]] = {}
+    for entry in tree.stdout.split(b"\0"):
+        if not entry:
+            continue
+        meta, _, path_bytes = entry.partition(b"\t")
+        parts = meta.split()
+        if len(parts) < 3:
+            continue
+        mode = parts[0].decode("utf-8", errors="replace")
+        otype = parts[1].decode("utf-8", errors="replace")
+        oid = parts[2].decode("utf-8", errors="replace")
+        if otype != "blob" or mode not in ("100644", "100755"):
+            continue
+        rel = path_bytes.decode("utf-8", errors="replace")
+        lang = config.language_for_path(rel)
+        doc_lang = (
+            config.doc_only_artifact_language_for_path(rel)
+            if doc_only
+            else config.documentation_language_for_path(rel)
         )
-        if extract.returncode != 0:
-            error = extract.stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(f"tar extraction failed for {repo}: {error or 'unknown error'}")
+        if lang is None and doc_lang is None:
+            continue
+        if lang is not None and not config.should_count_path(rel, include_vendor=include_vendor):
+            continue
+        if doc_lang is not None and not config.should_count_documentation_path(rel, include_vendor=include_vendor):
+            if not (doc_only and config.should_count_path(rel, include_vendor=include_vendor)):
+                continue
+        wanted.setdefault(oid, []).append((rel, lang, doc_lang))
 
-        excluded = config.excluded_dirs(include_vendor)
-        for dirpath, dirnames, filenames in os.walk(tmp):
-            dirnames[:] = [d for d in dirnames if d not in excluded]
-            for name in filenames:
-                fpath = Path(dirpath) / name
-                rel = fpath.relative_to(tmp).as_posix()
-                lang = config.language_for_path(rel)
-                doc_lang = (
-                    config.doc_only_artifact_language_for_path(rel)
-                    if config.is_doc_only_repo(repo)
-                    else config.documentation_language_for_path(rel)
-                )
-                if lang is None and doc_lang is None:
-                    continue
-                if lang is not None and not config.should_count_path(rel, include_vendor=include_vendor):
-                    continue
-                if doc_lang is not None and not config.should_count_documentation_path(rel, include_vendor=include_vendor):
-                    if not (config.is_doc_only_repo(repo) and config.should_count_path(rel, include_vendor=include_vendor)):
+    if not wanted:
+        return snap
+
+    cat = subprocess.Popen(
+        ["git", "cat-file", "--batch"],
+        cwd=repo,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    assert cat.stdin is not None and cat.stdout is not None
+    try:
+        oids = list(wanted)
+        for start in range(0, len(oids), 500):
+            chunk = oids[start:start + 500]
+            cat.stdin.write(("\n".join(chunk) + "\n").encode("utf-8"))
+            cat.stdin.flush()
+            for oid in chunk:
+                header = cat.stdout.readline()
+                if not header:
+                    raise RuntimeError(f"git cat-file stream ended early for {repo}")
+                fields = header.split()
+                if len(fields) < 3 or fields[1] != b"blob":
+                    continue  # missing or unexpected object: not countable
+                size = int(fields[2])
+                body = cat.stdout.read(size)
+                cat.stdout.read(1)  # trailing newline after each blob
+                lines = body.count(b"\n") + (1 if body and not body.endswith(b"\n") else 0)
+                for rel, lang, doc_lang in wanted[oid]:
+                    if doc_lang is not None:
+                        snap.docs_total += lines
+                        snap.docs_by_language[doc_lang] = snap.docs_by_language.get(doc_lang, 0) + lines
                         continue
-                try:
-                    with open(fpath, "rb") as fh:
-                        lines = sum(1 for _ in fh)
-                except OSError:
-                    continue
-                if doc_lang is not None:
-                    snap.docs_total += lines
-                    snap.docs_by_language[doc_lang] = snap.docs_by_language.get(doc_lang, 0) + lines
-                    continue
-                kind = config.source_kind_for_path(rel)
-                snap.total += lines
-                snap.by_language[lang] = snap.by_language.get(lang, 0) + lines
-                snap.by_kind[kind] = snap.by_kind.get(kind, 0) + lines
+                    assert lang is not None
+                    kind = config.source_kind_for_path(rel)
+                    snap.total += lines
+                    snap.by_language[lang] = snap.by_language.get(lang, 0) + lines
+                    snap.by_kind[kind] = snap.by_kind.get(kind, 0) + lines
+    finally:
+        cat.stdin.close()
+        cat.stdout.close()
+        cat.wait()
     return snap
 
 
@@ -2743,19 +2832,25 @@ def main() -> int:
     cutoff_cache_hits = 0
     cutoff_lookups = 0
     lookup_started = time.monotonic()
-    for mi, period_label in enumerate(month_labels):
-        cutoff = end_of_period_iso(period_label, args.period, report_tz)
+    cutoff_isos = [
+        end_of_period_iso(period_label, args.period, report_tz)
+        for period_label in month_labels
+    ]
+    cutoff_answers: list[dict[str, str | None]] = []
+    for ri, (label, path, oid, _fetch_status) in enumerate(source_entries):
+        try:
+            answers, hits, lookups = cached_commits_at(
+                path, cutoff_isos, oid, repo_identities[ri], cache,
+            )
+        except (RuntimeError, OSError):
+            return collection_error(label, "snapshot lookup")
+        cutoff_cache_hits += hits
+        cutoff_lookups += lookups
+        cutoff_answers.append(answers)
+
+    for mi, cutoff in enumerate(cutoff_isos):
         for ri, (label, path, oid, _fetch_status) in enumerate(source_entries):
-            try:
-                commit, hit = cached_commit_at(
-                    path, cutoff, oid, repo_identities[ri], cache,
-                )
-            except (RuntimeError, OSError):
-                return collection_error(label, "snapshot lookup")
-            if hit:
-                cutoff_cache_hits += 1
-            else:
-                cutoff_lookups += 1
+            commit = cutoff_answers[ri].get(cutoff)
             if commit is None:
                 continue
             snapshot_commits[mi][ri] = commit

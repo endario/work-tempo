@@ -24,6 +24,8 @@ final class CollectorClientTests: XCTestCase {
             environment: [
                 "ARGUMENT_LOG": argumentLog.path,
                 "REPORT_FIXTURE": reportFixture.path,
+            ],
+            logDirectory: fixture.base.appending(path: "logs")
             ]
         )
         let workspace = try Workspace(root: fixture.root)
