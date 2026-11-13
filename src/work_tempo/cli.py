@@ -2708,6 +2708,7 @@ def main() -> int:
         "disabled": 0,
     }
     for ri, (label, path, oid, _fetch_status) in enumerate(source_entries):
+        churn_started = time.monotonic()
         try:
             churn_all[ri], status = collect_churn_cached(
                 path,
@@ -2722,6 +2723,7 @@ def main() -> int:
         except (RuntimeError, OSError):
             return collection_error(label, "churn")
         churn_cache_counts[status] = churn_cache_counts.get(status, 0) + 1
+        print(f"  churn {label}: {status} in {time.monotonic() - churn_started:.2f}s")
     print(
         "  churn cache: "
         f"{churn_cache_counts.get('hit', 0)} hit, "
@@ -2773,6 +2775,7 @@ def main() -> int:
     print(f"  {len(tasks)} snapshots to compute")
     save_cache(cache_path, cache)
 
+    snapshot_started = time.monotonic()
     if tasks and args.workers == 1:
         done_count = 0
         for mi, ri, path, commit, key in tasks:
@@ -2810,6 +2813,8 @@ def main() -> int:
                 if done_count % 20 == 0 or done_count == len(tasks):
                     print(f"  {done_count}/{len(tasks)}", flush=True)
                     save_cache(cache_path, cache)
+    if tasks:
+        print(f"  snapshots: {len(tasks)} computed in {time.monotonic() - snapshot_started:.2f}s")
 
     # ------------------------------------------------------- aggregation
     period_column = "Day" if args.period == "day" else "Month"

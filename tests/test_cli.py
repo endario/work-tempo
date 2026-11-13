@@ -895,6 +895,24 @@ class LocAnalysisScriptTest(unittest.TestCase):
             self.assertIn(source["sourceOid"][:12], stdout.getvalue())
             self.assertIn("fetch failed", stderr.getvalue())
 
+    def test_run_prints_churn_and_snapshot_timings(self) -> None:
+        tempo = load_script("tempo_phase_timing_test", "src/work_tempo/cli.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            make_tracked_repo(repo)
+            output = root / "report.json"
+            argv = ["work-tempo", "--root", str(repo), "--period", "day", "--days", "1",
+                    "--workers", "1", "--no-cache", "--no-html", "--json", str(output),
+                    "--no-languages"]
+            stdout = io.StringIO()
+            with (mock.patch.object(sys, "argv", argv),
+                  mock.patch.object(sys, "stderr", io.StringIO()),
+                  redirect_stdout(stdout)):
+                self.assertEqual(tempo.main(), 0)
+            self.assertRegex(stdout.getvalue(), r"churn \(parent\): disabled in \d+\.\d+s")
+            self.assertRegex(stdout.getvalue(), r"snapshots: 1 computed in \d+\.\d+s")
+
     def test_collection_git_errors_do_not_replace_reports(self) -> None:
         tempo = load_script("tempo_atomic_collection_test", "src/work_tempo/cli.py")
         for failing_operation in ("collect_churn_cached", "find_commit_at", "count_snapshot"):

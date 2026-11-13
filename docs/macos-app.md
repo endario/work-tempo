@@ -145,6 +145,12 @@ Errors are scoped to the affected workspace and never discard the last good repo
 | Fetch fails but a last-fetched `origin/main` exists | Report uses that ref; individual and aggregate notices identify the fallback |
 | Unsupported report schema | File retained, upgrade error shown, metrics not interpreted |
 | Corrupt state or report file | File isolated; remaining valid state loads |
+
+Every collector run also appends a log under `~/Library/Logs/WorkTempo/`, one
+file per workspace: a header line (timestamp, root, days, timeout), the
+collector's stdout with its per-phase timings, and a `result=` footer. The log
+is capped at 1 MB per workspace and rotated to its most recent half, so a slow
+or timed-out run can be diagnosed after the fact without reproducing it.
 | Routine refresh timeout | Process group killed, workspace marked stale |
 
 ## Testing
