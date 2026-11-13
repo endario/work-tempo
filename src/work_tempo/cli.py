@@ -990,9 +990,9 @@ def find_commits_at(
 ) -> dict[str, str | None]:
     """Resolve each cutoff to the newest commit before it, in one history walk.
 
-    Equivalent per cutoff to `git log -1 --format=%H --before=<cutoff>
-    <source_oid>`: same walk order, same committer-date comparison. The walk
-    is stopped as soon as every cutoff is answered.
+    Same walk order and committer-date comparison as `git log --before`
+    (inclusive of the instant); the boundary test compares against real
+    `git log` output. The walk is stopped as soon as every cutoff is answered.
     """
     if not cutoff_isos:
         return {}
@@ -1139,8 +1139,11 @@ def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool
     assert cat.stdin is not None and cat.stdout is not None
     try:
         oids = list(wanted)
-        for start in range(0, len(oids), 500):
-            chunk = oids[start:start + 500]
+        # Chunks stay under any pipe buffer size: git may block writing a
+        # large blob to stdout and stop reading stdin, so the whole chunk
+        # must fit before the first response is due.
+        for start in range(0, len(oids), 100):
+            chunk = oids[start:start + 100]
             cat.stdin.write(("\n".join(chunk) + "\n").encode("utf-8"))
             cat.stdin.flush()
             for oid in chunk:
@@ -1149,7 +1152,10 @@ def count_snapshot(repo: Path, commit: str, config: Config, include_vendor: bool
                     raise RuntimeError(f"git cat-file stream ended early for {repo}")
                 fields = header.split()
                 if len(fields) < 3 or fields[1] != b"blob":
-                    continue  # missing or unexpected object: not countable
+                    raise RuntimeError(
+                        f"git cat-file could not read object {oid} for {repo}: "
+                        f"{header.decode('utf-8', errors='replace').strip()}"
+                    )
                 size = int(fields[2])
                 lines = 0
                 remaining = size

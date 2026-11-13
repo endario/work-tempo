@@ -140,8 +140,12 @@ public actor CollectorClient {
                 throw CollectorError.collectorFailed(finalDiagnostic(at: diagnosticURL, status: status))
             }
         } catch {
+            // No-op when an inner path already finished and closed the log.
             runLog.finish(result: "spawn_failed", started: started)
-            throw error
+            if let collectorError = error as? CollectorError {
+                throw collectorError
+            }
+            throw CollectorError.collectorFailed(error.localizedDescription)
         }
 
         do {
